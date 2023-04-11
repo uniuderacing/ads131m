@@ -1,4 +1,4 @@
-# Rust ADS131M simultaneously sampling 24-bit delta-sigma analog-to-digital converter driver
+# Rust TI ADS131M 24-bit analog-to-digital converter driver
 
 TODO: Badges
 
@@ -56,7 +56,7 @@ at your option.
 
 Inspired by [ads1x1x-rs](https://github.com/eldruin/ads1x1x-rs)
 
-### Contributing
+## Contributing
 
 Unless you explicitly state otherwise, any contribution intentionally submitted
 for inclusion in the work by you, as defined in the Apache-2.0 license, shall
