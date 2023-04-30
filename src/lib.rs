@@ -44,9 +44,11 @@
 #![warn(missing_docs)]
 #![no_std]
 
-pub mod config;
 pub mod device;
 pub mod error;
+pub mod interface;
+pub mod types;
 
 pub use device::Ads131m;
 pub use error::Error;
+pub use interface::Interface;

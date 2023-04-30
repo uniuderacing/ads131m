@@ -9,7 +9,7 @@ readme = "README.md"
 keywords = ["adc", "analog", "driver", "spi", "embedded-hal-driver"]
 categories = ["embedded", "hardware-support", "no-std"]
 homepage = "https://github.com/eloc3147/ads131m"
-documentation = "https://crouton.net"  # TODO: Add docs.rs link
+documentation = "https://crouton.net" # TODO: Add docs.rs link
 include = [
     "/**/*.rs",
     "/Cargo.toml",
@@ -20,8 +20,11 @@ include = [
 edition = "2021"
 
 [dependencies]
-nb = "1"
 embedded-hal = "0.2.7"
+nb = "1"
+ux = "0.1.5"
+num_enum = { version = "0.6.1", features = ["complex-expressions"] }
+enum-iterator = "1.4.0"
 
 [profile.release]
 lto = true
