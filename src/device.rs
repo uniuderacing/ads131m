@@ -23,30 +23,30 @@ const CH0_OCAL_LSB_ADDR: u8 = 0xB;
 const CH0_GCAL_MSB_ADDR: u8 = 0xC;
 const CH0_GCAL_LSB_ADDR: u8 = 0xD;
 
-const CH1_CFG_ADDR: u8 = 0xE;
-const CH1_OCAL_MSB_ADDR: u8 = 0xF;
-const CH1_OCAL_LSB_ADDR: u8 = 0x10;
-const CH1_GCAL_MSB_ADDR: u8 = 0x11;
-const CH1_GCAL_LSB_ADDR: u8 = 0x12;
-
-const CH2_CFG_ADDR: u8 = 0x13;
-const CH2_OCAL_MSB_ADDR: u8 = 0x14;
-const CH2_OCAL_LSB_ADDR: u8 = 0x15;
-const CH2_GCAL_MSB_ADDR: u8 = 0x16;
-const CH2_GCAL_LSB_ADDR: u8 = 0x17;
-
-const CH3_CFG_ADDR: u8 = 0x18;
-const CH3_OCAL_MSB_ADDR: u8 = 0x19;
-const CH3_OCAL_LSB_ADDR: u8 = 0x1A;
-const CH3_GCAL_MSB_ADDR: u8 = 0x1B;
-const CH3_GCAL_LSB_ADDR: u8 = 0x1C;
-
-const REGMAP_CRC_ADDR: u8 = 0x3E;
+// const CH1_CFG_ADDR: u8 = 0xE;
+// const CH1_OCAL_MSB_ADDR: u8 = 0xF;
+// const CH1_OCAL_LSB_ADDR: u8 = 0x10;
+// const CH1_GCAL_MSB_ADDR: u8 = 0x11;
+// const CH1_GCAL_LSB_ADDR: u8 = 0x12;
+//
+// const CH2_CFG_ADDR: u8 = 0x13;
+// const CH2_OCAL_MSB_ADDR: u8 = 0x14;
+// const CH2_OCAL_LSB_ADDR: u8 = 0x15;
+// const CH2_GCAL_MSB_ADDR: u8 = 0x16;
+// const CH2_GCAL_LSB_ADDR: u8 = 0x17;
+//
+// const CH3_CFG_ADDR: u8 = 0x18;
+// const CH3_OCAL_MSB_ADDR: u8 = 0x19;
+// const CH3_OCAL_LSB_ADDR: u8 = 0x1A;
+// const CH3_GCAL_MSB_ADDR: u8 = 0x1B;
+// const CH3_GCAL_LSB_ADDR: u8 = 0x1C;
+//
+// const REGMAP_CRC_ADDR: u8 = 0x3E;
 
 /// ADS131M ADC driver
 #[derive(Debug)]
 pub struct Ads131m<W, I> {
-    intf: I,
+    _intf: I,
     register_config: bool,
     w: PhantomData<W>,
 }
@@ -74,7 +74,7 @@ where
     /// [`embedded-hal`]: https://github.com/rust-embedded/embedded-hal
     pub fn open_with_config(intf: I, config: bool) -> Result<Ads131m<W, I>, Error<I::Error>> {
         Ok(Ads131m {
-            intf,
+            _intf: intf,
             register_config: config,
             w: PhantomData,
         })
