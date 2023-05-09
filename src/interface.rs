@@ -20,7 +20,7 @@ where
     /// If input is shorter than output, the remaining bytes will be sent as zeros.
     /// If output is shorter than input, the extra received bytes will be dropped.
     ///
-    /// Panics if either buffer is not a multiple of Self::WORD_LEN in length.
+    /// Panics if either buffer is not a multiple of `WORD_LEN` in length.
     fn transfer(&mut self, send: &[u8], receive: &mut [u8]) -> Result<(), Error<Self::Error>> {
         debug_assert!(send.len() % Self::WORD_LEN == 0);
         debug_assert!(receive.len() % Self::WORD_LEN == 0);
@@ -77,12 +77,12 @@ where
 
     /// Unpack a word into a buffer
     ///
-    /// Panics if buf if not WORD_LEN in length
+    /// Panics if buf if not `WORD_LEN` in length
     fn unpack_word(word: W, buf: &mut [u8]);
 
     /// Pack a word from some bytes
     ///
-    /// Panics if buf if not WORD_LEN in length
+    /// Panics if buf if not `WORD_LEN` in length
     fn pack_word(buf: &[u8]) -> W;
 }
 

@@ -1,5 +1,11 @@
 //! Types for configuring an ADS131M registers
 
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::missing_panics_doc,
+    clippy::struct_excessive_bools
+)]
+
 use enum_iterator::{self, Sequence};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use ux::{u10, u24, u4};
@@ -394,9 +400,10 @@ pub struct Id {
 }
 
 impl Id {
-    /// Decode a Status from it's register word
-    pub fn from_word(word: u16) -> Id {
-        Id {
+    /// Decode a `Status` from it's register word
+    #[must_use]
+    pub const fn from_word(word: u16) -> Self {
+        Self {
             channel_count: u4::new(((word >> 8) & 0b1111) as u8),
         }
     }
@@ -441,9 +448,10 @@ pub struct Status {
 }
 
 impl Status {
-    /// Decode a Status from it's register word
-    pub fn from_word(word: u16) -> Status {
-        Status {
+    /// Decode a `Status` from it's register word
+    #[must_use]
+    pub fn from_word(word: u16) -> Self {
+        Self {
             lock: is_bit_set!(word, 15),
             resync: is_bit_set!(word, 14),
             reg_map_crc_err: is_bit_set!(word, 13),
@@ -461,7 +469,7 @@ impl Status {
 
 impl Default for Status {
     fn default() -> Self {
-        Status {
+        Self {
             lock: false,
             resync: false,
             reg_map_crc_err: false,
@@ -510,9 +518,10 @@ pub struct Mode {
 }
 
 impl Mode {
-    /// Decode a Mode from it's register word
-    pub fn from_word(word: u16) -> Mode {
-        Mode {
+    /// Decode a `Mode` from it's register word
+    #[must_use]
+    pub fn from_word(word: u16) -> Self {
+        Self {
             reg_crc_enable: is_bit_set!(word, 13),
             spi_crc_enable: is_bit_set!(word, 12),
             crc_type: CrcType::try_from((word >> 11) & 0b1).unwrap(),
@@ -525,7 +534,8 @@ impl Mode {
         }
     }
 
-    /// Returns the register word for this Mode configuration
+    /// Returns the register word for this `Mode` configuration
+    #[must_use]
     pub fn to_word(&self) -> u16 {
         u16::from(self.reg_crc_enable) << 13
             | u16::from(self.spi_crc_enable) << 12
@@ -541,7 +551,7 @@ impl Mode {
 
 impl Default for Mode {
     fn default() -> Self {
-        Mode {
+        Self {
             reg_crc_enable: false,
             spi_crc_enable: false,
             crc_type: CrcType::default(),
@@ -578,9 +588,10 @@ pub struct Clock {
 }
 
 impl Clock {
-    /// Decode a Clock from it's register word
-    pub fn from_word(word: u16) -> Clock {
-        Clock {
+    /// Decode a `Clock` from it's register word
+    #[must_use]
+    pub fn from_word(word: u16) -> Self {
+        Self {
             channel0_en: is_bit_set!(word, 8),
             channel1_en: is_bit_set!(word, 9),
             channel2_en: is_bit_set!(word, 10),
@@ -590,7 +601,8 @@ impl Clock {
         }
     }
 
-    /// Returns the register word for this Clock configuration
+    /// Returns the register word for this `Clock` configuration
+    #[must_use]
     pub fn to_word(&self) -> u16 {
         u16::from(self.channel3_en) << 11
             | u16::from(self.channel2_en) << 10
@@ -604,7 +616,7 @@ impl Clock {
 
 impl Default for Clock {
     fn default() -> Self {
-        Clock {
+        Self {
             channel0_en: true,
             channel1_en: true,
             channel2_en: true,
@@ -632,9 +644,10 @@ pub struct Gain {
 }
 
 impl Gain {
-    /// Decode a Gain from it's register word
-    pub fn from_word(word: u16) -> Gain {
-        Gain {
+    /// Decode a `Gain` from it's register word
+    #[must_use]
+    pub fn from_word(word: u16) -> Self {
+        Self {
             pga_gain0: PgaGain::try_from(word & 0b111).unwrap(),
             pga_gain1: PgaGain::try_from((word >> 4) & 0b111).unwrap(),
             pga_gain2: PgaGain::try_from((word >> 8) & 0b111).unwrap(),
@@ -642,7 +655,8 @@ impl Gain {
         }
     }
 
-    /// Returns the register word for this Gain configuration
+    /// Returns the register word for this `Gain` configuration
+    #[must_use]
     pub fn to_word(&self) -> u16 {
         u16::from(self.pga_gain0)
             | u16::from(self.pga_gain1) << 4
@@ -675,9 +689,10 @@ pub struct Config {
 }
 
 impl Config {
-    /// Decode a Config from it's register word
-    pub fn from_word(word: u16) -> Config {
-        Config {
+    /// Decode a `Config` from it's register word
+    #[must_use]
+    pub fn from_word(word: u16) -> Self {
+        Self {
             global_chop_delay: GlobalChopDelay::try_from((word >> 9) & 0b1111).unwrap(),
             global_chop_enable: is_bit_set!(word, 8),
             current_detect_channels: CurrentDetectChannels::try_from((word >> 7) & 0b1).unwrap(),
@@ -687,7 +702,8 @@ impl Config {
         }
     }
 
-    /// Returns the register word for this Config configuration
+    /// Returns the register word for this `Config` configuration
+    #[must_use]
     pub fn to_word(&self) -> u16 {
         u16::from(self.global_chop_delay) << 9
             | u16::from(self.global_chop_enable) << 8
@@ -698,7 +714,7 @@ impl Config {
     }
 }
 
-/// Device THRSHLD_MSB and THRSHLD_LSB registers
+/// Device `THRSHLD_MSB` and `THRSHLD_LSB` registers
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Threshold {
     /// Current-detect mode threshold
@@ -709,19 +725,21 @@ pub struct Threshold {
 }
 
 impl Threshold {
-    /// Decode a Threshold from it's register words
+    /// Decode a `Threshold` from it's register words
     ///
-    /// Words must be in the order [THRSHLD_MSB, THRSHLD_LSB]
-    pub fn from_words(words: [u16; 2]) -> Threshold {
-        Threshold {
-            current_detect_threshold: u24::new((words[0] as u32) << 8 | (words[1] as u32) >> 8),
+    /// Words must be MSB first
+    #[must_use]
+    pub fn from_words(words: [u16; 2]) -> Self {
+        Self {
+            current_detect_threshold: u24::new(u32::from(words[0]) << 8 | u32::from(words[1]) >> 8),
             dc_block: DcBlock::try_from(words[1] & 0b1111).unwrap(),
         }
     }
 
-    /// Returns the register words for this Threshold configuration
+    /// Returns the register words for this `Threshold` configuration
     ///
-    /// Words are in the order [THRSHLD_MSB, THRSHLD_LSB]
+    /// Words are MSB first
+    #[must_use]
     pub fn to_words(&self) -> [u16; 2] {
         let threshold = u32::from(self.current_detect_threshold);
 
@@ -732,7 +750,7 @@ impl Threshold {
     }
 }
 
-/// Device CHx_CFG register
+/// Device `CHx_CFG` register
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ChannelConfig {
     /// Channel 0 phase delay in modulator clock cycles
@@ -746,22 +764,24 @@ pub struct ChannelConfig {
 }
 
 impl ChannelConfig {
-    /// Decode a ChannelConfig from it's register word
-    pub fn from_word(word: u16) -> ChannelConfig {
-        ChannelConfig {
+    /// Decode a `ChannelConfig` from it's register word
+    #[must_use]
+    pub fn from_word(word: u16) -> Self {
+        Self {
             phase: u10::new(word >> 6),
             dc_block_disable: is_bit_set!(word, 2),
             mux: ChannelMux::try_from(word & 0b11).unwrap(),
         }
     }
 
-    /// Returns the register word for this ChannelConfig
+    /// Returns the register word for this `ChannelConfig`
+    #[must_use]
     pub fn to_word(&self) -> u16 {
         u16::from(self.phase) << 6 | u16::from(self.dc_block_disable) << 2 | u16::from(self.mux)
     }
 }
 
-/// Device CHx_OCAL_MSB and CHx_OCAL_LSB registers
+/// Device `CHx_OCAL_MSB` and `CHx_OCAL_LSB` registers
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OffsetCal {
     /// Channel offset calibration
@@ -769,18 +789,20 @@ pub struct OffsetCal {
 }
 
 impl OffsetCal {
-    /// Decode an OffsetCal from it's register words
+    /// Decode an `OffsetCal` from it's register words
     ///
-    /// Words must be in the order [CHx_OCAL_MSB, CHx_OCAL_LSB]
-    pub fn from_words(words: [u16; 2]) -> OffsetCal {
-        OffsetCal {
-            offset: u24::new((words[0] as u32) << 8 | (words[1] as u32) >> 8),
+    /// Words must be MSB first
+    #[must_use]
+    pub fn from_words(words: [u16; 2]) -> Self {
+        Self {
+            offset: u24::new(u32::from(words[0]) << 8 | u32::from(words[1]) >> 8),
         }
     }
 
-    /// Returns the register words for this OffsetCal configuration
+    /// Returns the register words for this `OffsetCal` configuration
     ///
-    /// Words are in the order [CHx_OCAL_MSB, CHx_OCAL_LSB]
+    /// Words are MSB first
+    #[must_use]
     pub fn to_words(&self) -> [u16; 2] {
         let offset = u32::from(self.offset);
 
@@ -788,7 +810,7 @@ impl OffsetCal {
     }
 }
 
-/// Device CHx_GCAL_MSB and CHx_GCAL_LSB registers
+/// Device `CHx_GCAL_MSB` and `CHx_GCAL_LSB` registers
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GainCal {
     /// Channel gain calibration
@@ -796,18 +818,20 @@ pub struct GainCal {
 }
 
 impl GainCal {
-    /// Decode an GainCal from it's register words
+    /// Decode an `GainCal` from it's register words
     ///
-    /// Words must be in the order [CHx_GCAL_MSB, CHx_GCAL_LSB]
-    pub fn from_words(words: [u16; 2]) -> GainCal {
-        GainCal {
-            gain: u24::new((words[0] as u32) << 8 | (words[1] as u32) >> 8),
+    /// Words must be MSB first
+    #[must_use]
+    pub fn from_words(words: [u16; 2]) -> Self {
+        Self {
+            gain: u24::new(u32::from(words[0]) << 8 | u32::from(words[1]) >> 8),
         }
     }
 
-    /// Returns the register words for this GainCal configuration
+    /// Returns the register words for this `GainCal` configuration
     ///
-    /// Words are in the order [CHx_GCAL_MSB, CHx_GCAL_LSB]
+    /// Words are MSB first
+    #[must_use]
     pub fn to_words(&self) -> [u16; 2] {
         let gain = u32::from(self.gain);
 
@@ -817,8 +841,8 @@ impl GainCal {
 
 impl Default for GainCal {
     fn default() -> Self {
-        GainCal {
-            gain: u24::new(0x800000),
+        Self {
+            gain: u24::new(0x0080_0000),
         }
     }
 }

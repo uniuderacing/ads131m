@@ -40,8 +40,15 @@
 //! ```
 //!
 
+#![warn(
+    clippy::all,
+    clippy::pedantic,
+    clippy::cargo,
+    clippy::nursery,
+    missing_docs
+)]
+#![allow(clippy::missing_errors_doc, clippy::similar_names)]
 #![deny(unsafe_code)]
-#![warn(missing_docs)]
 #![no_std]
 
 pub mod device;

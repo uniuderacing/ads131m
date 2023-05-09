@@ -63,8 +63,8 @@ where
     /// This command assumes the device is in it's default state
     ///
     /// [`embedded-hal`]: https://github.com/rust-embedded/embedded-hal
-    pub fn open(intf: I) -> Result<Ads131m<W, I>, Error<I::Error>> {
-        Self::open_with_config(intf, bool::default())
+    pub const fn open(intf: I) -> Result<Self, Error<I::Error>> {
+        Self::open_with_config(intf, false)
     }
 
     /// Initialize an ADS131M driver from an [`embedded-hal`] SPI interface with a custom configuration
@@ -72,8 +72,8 @@ where
     /// The SPI interface must be configured for SPI mode 1
     ///
     /// [`embedded-hal`]: https://github.com/rust-embedded/embedded-hal
-    pub fn open_with_config(intf: I, config: bool) -> Result<Ads131m<W, I>, Error<I::Error>> {
-        Ok(Ads131m {
+    pub const fn open_with_config(intf: I, config: bool) -> Result<Self, Error<I::Error>> {
+        Ok(Self {
             _intf: intf,
             register_config: config,
             w: PhantomData,
@@ -81,7 +81,7 @@ where
     }
 
     /// Get the current cache of the device configuration
-    pub fn get_current_config(&self) -> &bool {
+    pub const fn get_current_config(&self) -> &bool {
         &self.register_config
     }
 
@@ -141,21 +141,21 @@ where
         self.write_reg(CFG_ADDR, gain.to_word())
     }
 
-    /// Read the THRSHLD_MSB and THRSHLD_LSB registers
+    /// Read the `THRSHLD_MSB` and `THRSHLD_LSB` registers
     pub fn get_threshold(&mut self) -> Result<Threshold, Error<I::Error>> {
         let msb = self.read_reg(THRSHLD_MSB_ADDR)?;
         let lsb = self.read_reg(THRSHLD_LSB_ADDR)?;
         Ok(Threshold::from_words([msb, lsb]))
     }
 
-    /// Write to the THRSHLD_MSB and THRSHLD_LSB registers
+    /// Write to the `THRSHLD_MSB` and `THRSHLD_LSB` registers
     pub fn set_threshold(&mut self, threshold: Threshold) -> Result<(), Error<I::Error>> {
         let [msb, lsb] = threshold.to_words();
         self.write_reg(THRSHLD_MSB_ADDR, msb)?;
         self.write_reg(THRSHLD_LSB_ADDR, lsb)
     }
 
-    /// Read the CH0_CFG register
+    /// Read the `CH0_CFG` register
     ///
     /// TODO: Figure out how to handle multiple channels
     pub fn get_channel_0_config(&mut self) -> Result<ChannelConfig, Error<I::Error>> {
@@ -163,14 +163,14 @@ where
         Ok(ChannelConfig::from_word(word))
     }
 
-    /// Write to the CH0_CFG register
+    /// Write to the `CH0_CFG` register
     ///
     /// TODO: Figure out how to handle multiple channels
     pub fn set_channel_0_config(&mut self, config: ChannelConfig) -> Result<(), Error<I::Error>> {
         self.write_reg(CH0_CFG_ADDR, config.to_word())
     }
 
-    /// Read the CH0_OCAL_MSB and CH0_OCAL_LSB registers
+    /// Read the `CH0_OCAL_MSB` and `CH0_OCAL_LSB` registers
     ///
     /// TODO: Figure out how to handle multiple channels
     pub fn get_channel_0_offset_cal(&mut self) -> Result<OffsetCal, Error<I::Error>> {
@@ -179,7 +179,7 @@ where
         Ok(OffsetCal::from_words([msb, lsb]))
     }
 
-    /// Write to the CH0_OCAL_MSB and CH0_OCAL_LSB registers
+    /// Write to the `CH0_OCAL_MSB` and `CH0_OCAL_LSB` registers
     ///
     /// TODO: Figure out how to handle multiple channels
     pub fn set_channel_0_offset_cal(
@@ -191,7 +191,7 @@ where
         self.write_reg(CH0_OCAL_LSB_ADDR, lsb)
     }
 
-    /// Read the CH0_GCAL_MSB and CH0_GCAL_LSB registers
+    /// Read the `CH0_GCAL_MSB` and `CH0_GCAL_LSB` registers
     ///
     /// TODO: Figure out how to handle multiple channels
     pub fn get_channel_0_gain_cal(&mut self) -> Result<GainCal, Error<I::Error>> {
@@ -200,7 +200,7 @@ where
         Ok(GainCal::from_words([msb, lsb]))
     }
 
-    /// Write to the CH0_GCAL_MSB and CH0_GCAL_LSB registers
+    /// Write to the `CH0_GCAL_MSB` and `CH0_GCAL_LSB` registers
     ///
     /// TODO: Figure out how to handle multiple channels
     pub fn set_channel_0_gain_cal(&mut self, gain_cal: GainCal) -> Result<(), Error<I::Error>> {
@@ -210,10 +210,12 @@ where
     }
 
     fn read_reg(&mut self, _address: u8) -> Result<u16, Error<I::Error>> {
+        let _ = self;
         unimplemented!()
     }
 
     fn write_reg(&mut self, _address: u8, _word: u16) -> Result<(), Error<I::Error>> {
+        let _ = self;
         unimplemented!()
     }
 }

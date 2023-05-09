@@ -8,6 +8,6 @@ pub enum Error<S> {
 
 impl<S> From<S> for Error<S> {
     fn from(value: S) -> Self {
-        Error::SpiError(value)
+        Self::SpiError(value)
     }
 }
