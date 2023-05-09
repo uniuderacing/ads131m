@@ -1,5 +1,6 @@
 # Rust TI ADS131M 24-bit analog-to-digital converter driver
 
+[![Coverage Status](https://coveralls.io/repos/github/eloc3147/ads131m/badge.svg?branch=master)](https://coveralls.io/github/eloc3147/ads131m?branch=master)
 TODO: Badges
 
 This is an [`embedded-hal`] Rust driver for the Texas Instruments [`ADS131M`] series of simultaneously sampling
@@ -47,8 +48,8 @@ Please feel free to submit any questions on the GitHub issues page.
 
 Licensed under either of
 
-- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
-- MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or <http://www.apache.org/licenses/LICENSE-2.0>)
+- MIT license ([LICENSE-MIT](LICENSE-MIT) or <http://opensource.org/licenses/MIT>)
 
 at your option.
 
