@@ -51,22 +51,25 @@ macro_rules! impl_open {
             I: Interface<W>,
             W: From<u8> + Copy,
         {
-            /// Initialize an $model_name driver from an [`embedded-hal`] SPI interface
-            ///
-            /// The SPI interface must be configured for SPI mode 1
-            ///
-            /// This command assumes the device is in it's default state
-            ///
-            /// [`embedded-hal`]: https://github.com/rust-embedded/embedded-hal
+            #[doc=concat!(
+                        "Initialize an ",
+                        $model_name,
+                        " driver from an [`embedded-hal`] SPI interface\n\n",
+                        "The SPI interface must be configured for SPI mode 1\n\n",
+                        "This command assumes the device is in it's default state\n\n",
+                        "[`embedded-hal`]: https://github.com/rust-embedded/embedded-hal"
+                    )]
             pub fn $open_name(intf: I) -> Result<Self, Error<I::Error>> {
                 Self::$open__with_name(intf, Mode::default())
             }
 
-            /// Initialize an $model_name driver from an [`embedded-hal`] SPI interface with a custom configuration
-            ///
-            /// The SPI interface must be configured for SPI mode 1
-            ///
-            /// [`embedded-hal`]: https://github.com/rust-embedded/embedded-hal
+            #[doc=concat!(
+                "Initialize an ",
+                $model_name,
+                " driver from an [`embedded-hal`] SPI interface with a custom configuration\n\n",
+                "The SPI interface must be configured for SPI mode 1\n\n",
+                "[`embedded-hal`]: https://github.com/rust-embedded/embedded-hal"
+            )]
             pub fn $open__with_name(intf: I, mode: Mode) -> Result<Self, Error<I::Error>> {
                 Self::open(intf, mode)
             }
@@ -78,7 +81,7 @@ macro_rules! impl_open {
 #[derive(Debug)]
 pub struct Ads131m<W, I, C: Ic> {
     _intf: I,
-    mode: Mode,
+    _mode: Mode,
     w: PhantomData<W>,
     c: PhantomData<C>,
 }
@@ -251,7 +254,7 @@ where
     fn open(intf: I, mode: Mode) -> Result<Self, Error<I::Error>> {
         let adc = Self {
             _intf: intf,
-            mode,
+            _mode: mode,
             w: PhantomData,
             c: PhantomData,
         };
