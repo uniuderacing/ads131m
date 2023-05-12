@@ -2,6 +2,7 @@
 
 use core::marker::PhantomData;
 
+use crate::ic::{Ads131m02, Ads131m03, Ads131m04, Ads131m06, Ads131m08, Ic};
 use crate::interface::Interface;
 use crate::types::{
     ChannelConfig, Clock, Config, Gain, GainCal, Id, Mode, OffsetCal, Status, Threshold,
@@ -43,48 +44,86 @@ const CH0_GCAL_LSB_ADDR: u8 = 0xD;
 //
 // const REGMAP_CRC_ADDR: u8 = 0x3E;
 
-/// ADS131M ADC driver
-#[derive(Debug)]
-pub struct Ads131m<W, I> {
-    _intf: I,
-    register_config: bool,
-    w: PhantomData<W>,
+macro_rules! impl_open {
+    ($model_name:literal, $type:ident, $open_name:ident, $open__with_name:ident) => {
+        impl<W, I> Ads131m<W, I, $type>
+        where
+            I: Interface<W>,
+            W: From<u8> + Copy,
+        {
+            /// Initialize an $model_name driver from an [`embedded-hal`] SPI interface
+            ///
+            /// The SPI interface must be configured for SPI mode 1
+            ///
+            /// This command assumes the device is in it's default state
+            ///
+            /// [`embedded-hal`]: https://github.com/rust-embedded/embedded-hal
+            pub fn $open_name(intf: I) -> Result<Self, Error<I::Error>> {
+                Self::$open__with_name(intf, Mode::default())
+            }
+
+            /// Initialize an $model_name driver from an [`embedded-hal`] SPI interface with a custom configuration
+            ///
+            /// The SPI interface must be configured for SPI mode 1
+            ///
+            /// [`embedded-hal`]: https://github.com/rust-embedded/embedded-hal
+            pub fn $open__with_name(intf: I, mode: Mode) -> Result<Self, Error<I::Error>> {
+                Self::open(intf, mode)
+            }
+        }
+    };
 }
 
-impl<W, I> Ads131m<W, I>
+/// ADS131M ADC driver
+#[derive(Debug)]
+pub struct Ads131m<W, I, C: Ic> {
+    _intf: I,
+    mode: Mode,
+    w: PhantomData<W>,
+    c: PhantomData<C>,
+}
+
+impl_open!(
+    "ADS131M02",
+    Ads131m02,
+    open_ads131m02,
+    open_ads131m02_with_mode
+);
+
+impl_open!(
+    "ADS131M03",
+    Ads131m03,
+    open_ads131m03,
+    open_ads131m03_with_mode
+);
+
+impl_open!(
+    "ADS131M04",
+    Ads131m04,
+    open_ads131m04,
+    open_ads131m04_with_mode
+);
+
+impl_open!(
+    "ADS131M06",
+    Ads131m06,
+    open_ads131m06,
+    open_ads131m06_with_mode
+);
+
+impl_open!(
+    "ADS131M08",
+    Ads131m08,
+    open_ads131m08,
+    open_ads131m08_with_mode
+);
+
+impl<W, I, C> Ads131m<W, I, C>
 where
     I: Interface<W>,
     W: From<u8> + Copy,
+    C: Ic,
 {
-    /// Initialize an ADS131M driver from an [`embedded-hal`] SPI interface
-    ///
-    /// The SPI interface must be configured for SPI mode 1
-    ///
-    /// This command assumes the device is in it's default state
-    ///
-    /// [`embedded-hal`]: https://github.com/rust-embedded/embedded-hal
-    pub const fn open(intf: I) -> Result<Self, Error<I::Error>> {
-        Self::open_with_config(intf, false)
-    }
-
-    /// Initialize an ADS131M driver from an [`embedded-hal`] SPI interface with a custom configuration
-    ///
-    /// The SPI interface must be configured for SPI mode 1
-    ///
-    /// [`embedded-hal`]: https://github.com/rust-embedded/embedded-hal
-    pub const fn open_with_config(intf: I, config: bool) -> Result<Self, Error<I::Error>> {
-        Ok(Self {
-            _intf: intf,
-            register_config: config,
-            w: PhantomData,
-        })
-    }
-
-    /// Get the current cache of the device configuration
-    pub const fn get_current_config(&self) -> &bool {
-        &self.register_config
-    }
-
     /// Read the ID register
     pub fn get_id(&mut self) -> Result<Id, Error<I::Error>> {
         let word = self.read_reg(ID_ADDR)?;
@@ -207,6 +246,17 @@ where
         let [msb, lsb] = gain_cal.to_words();
         self.write_reg(CH0_GCAL_MSB_ADDR, msb)?;
         self.write_reg(CH0_GCAL_LSB_ADDR, lsb)
+    }
+
+    fn open(intf: I, mode: Mode) -> Result<Self, Error<I::Error>> {
+        let adc = Self {
+            _intf: intf,
+            mode,
+            w: PhantomData,
+            c: PhantomData,
+        };
+
+        Ok(adc)
     }
 
     fn read_reg(&mut self, _address: u8) -> Result<u16, Error<I::Error>> {

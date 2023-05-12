@@ -56,6 +56,9 @@ pub mod error;
 pub mod interface;
 pub mod types;
 
+#[doc(hidden)]
+pub mod ic;
+
 pub use device::Ads131m;
 pub use error::Error;
 pub use interface::Interface;
