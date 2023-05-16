@@ -2,273 +2,306 @@
 
 use core::marker::PhantomData;
 
-use crate::ic::{Ads131m02, Ads131m03, Ads131m04, Ads131m06, Ads131m08, Ic};
 use crate::interface::Interface;
+use crate::registers;
 use crate::types::{
     ChannelConfig, Clock, Config, Gain, GainCal, Id, Mode, OffsetCal, Status, Threshold,
 };
 use crate::Error;
+use concat_idents::concat_idents;
 
-const ID_ADDR: u8 = 0x0;
-const STATUS_ADDR: u8 = 0x1;
-const MODE_ADDR: u8 = 0x2;
-const CLOCK_ADDR: u8 = 0x3;
-const GAIN_ADDR: u8 = 0x4;
-const CFG_ADDR: u8 = 0x6;
-const THRSHLD_MSB_ADDR: u8 = 0x7;
-const THRSHLD_LSB_ADDR: u8 = 0x8;
-
-const CH0_CFG_ADDR: u8 = 0x9;
-const CH0_OCAL_MSB_ADDR: u8 = 0xA;
-const CH0_OCAL_LSB_ADDR: u8 = 0xB;
-const CH0_GCAL_MSB_ADDR: u8 = 0xC;
-const CH0_GCAL_LSB_ADDR: u8 = 0xD;
-
-// const CH1_CFG_ADDR: u8 = 0xE;
-// const CH1_OCAL_MSB_ADDR: u8 = 0xF;
-// const CH1_OCAL_LSB_ADDR: u8 = 0x10;
-// const CH1_GCAL_MSB_ADDR: u8 = 0x11;
-// const CH1_GCAL_LSB_ADDR: u8 = 0x12;
-//
-// const CH2_CFG_ADDR: u8 = 0x13;
-// const CH2_OCAL_MSB_ADDR: u8 = 0x14;
-// const CH2_OCAL_LSB_ADDR: u8 = 0x15;
-// const CH2_GCAL_MSB_ADDR: u8 = 0x16;
-// const CH2_GCAL_LSB_ADDR: u8 = 0x17;
-//
-// const CH3_CFG_ADDR: u8 = 0x18;
-// const CH3_OCAL_MSB_ADDR: u8 = 0x19;
-// const CH3_OCAL_LSB_ADDR: u8 = 0x1A;
-// const CH3_GCAL_MSB_ADDR: u8 = 0x1B;
-// const CH3_GCAL_LSB_ADDR: u8 = 0x1C;
-//
-// const REGMAP_CRC_ADDR: u8 = 0x3E;
-
-macro_rules! impl_open {
-    ($model_name:literal, $type:ident, $open_name:ident, $open__with_name:ident) => {
-        impl<W, I> Ads131m<W, I, $type>
+// Maybe some fancy const stuff can be done instead of this at some point.
+// Just having a channel_idx input would not be checked at compile time
+#[rustfmt::skip]
+macro_rules! impl_channel {
+    ($trait_name:ident, $channel_name:ident, $channel_num:literal) => {
+        #[doc=concat!("Methods for configuring ADC channel ", $channel_num)]
+        pub trait $trait_name<E>
         where
-            I: Interface<W>,
-            W: From<u8> + Copy,
+            Self: AdcCommon<E>,
         {
-            #[doc=concat!(
-                        "Initialize an ",
-                        $model_name,
-                        " driver from an [`embedded-hal`] SPI interface\n\n",
-                        "The SPI interface must be configured for SPI mode 1\n\n",
-                        "This command assumes the device is in it's default state\n\n",
-                        "[`embedded-hal`]: https://github.com/rust-embedded/embedded-hal"
-                    )]
-            pub fn $open_name(intf: I) -> Result<Self, Error<I::Error>> {
-                Self::$open__with_name(intf, Mode::default())
-            }
+            concat_idents!(get_channel_config = get_, $channel_name, _config, {
+                #[doc=concat!(
+                    "Read the `CH",
+                    $channel_num,
+                    "_CFG` register"
+                )]
+                fn get_channel_config(&mut self) -> Result<ChannelConfig, E> {
+                    let word = self.read_reg(registers::CHANNEL_CONFIG_ADDRS[$channel_num])?;
+                    Ok(ChannelConfig::from_word(word))
+                }
+            });
 
-            #[doc=concat!(
-                "Initialize an ",
-                $model_name,
-                " driver from an [`embedded-hal`] SPI interface with a custom configuration\n\n",
-                "The SPI interface must be configured for SPI mode 1\n\n",
-                "[`embedded-hal`]: https://github.com/rust-embedded/embedded-hal"
-            )]
-            pub fn $open__with_name(intf: I, mode: Mode) -> Result<Self, Error<I::Error>> {
-                Self::open(intf, mode)
-            }
+            concat_idents!(set_channel_config = set_, $channel_name, _config, {
+                #[doc=concat!(
+                    "Write to the `CH",
+                    $channel_num,
+                    "_CFG` register"
+                )]
+                fn set_channel_config(&mut self, config: ChannelConfig) -> Result<(), E> {
+                    self.write_reg(registers::CHANNEL_CONFIG_ADDRS[$channel_num], config.to_word())
+                }
+            });
+
+            concat_idents!(get_channel_offset_cal = get_, $channel_name, _offset_cal, {
+                #[doc=concat!(
+                    "Read the `CH",
+                    $channel_num,
+                    "_OCAL_MSB` and `CH",
+                    $channel_num,
+                    "_OCAL_LSB` registers"
+                )]
+                fn get_channel_offset_cal(&mut self) -> Result<OffsetCal, E> {
+                    let msb = self.read_reg(registers::CHANNEL_OCAL_MSB_ADDRS[$channel_num])?;
+                    let lsb = self.read_reg(registers::CHANNEL_OCAL_LSB_ADDRS[$channel_num])?;
+                    Ok(OffsetCal::from_words([msb, lsb]))
+                }
+            });
+
+            concat_idents!(set_channel_offset_cal = set_, $channel_name, _offset_cal, {
+                #[doc=concat!(
+                    "Write to the `CH",
+                    $channel_num,
+                    "_OCAL_MSB` and `CH",
+                    $channel_num,
+                    "_OCAL_LSB` registers"
+                )]
+                fn set_channel_offset_cal(&mut self, offset_cal: OffsetCal) -> Result<(), E> {
+                    let [msb, lsb] = offset_cal.to_words();
+                    self.write_reg(registers::CHANNEL_OCAL_MSB_ADDRS[$channel_num], msb)?;
+                    self.write_reg(registers::CHANNEL_OCAL_LSB_ADDRS[$channel_num], lsb)
+                }
+            });
+
+            concat_idents!(get_channel_gain_cal = get_, $channel_name, _gain_cal, {
+                #[doc=concat!(
+                    "Read the `CH",
+                    $channel_num,
+                    "_GCAL_MSB` and `CH",
+                    $channel_num,
+                    "_GCAL_LSB` registers"
+                )]
+                fn get_channel_gain_cal(&mut self) -> Result<GainCal, E> {
+                    let msb = self.read_reg(registers::CHANNEL_GCAL_MSB_ADDRS[$channel_num])?;
+                    let lsb = self.read_reg(registers::CHANNEL_GCAL_LSB_ADDRS[$channel_num])?;
+                    Ok(GainCal::from_words([msb, lsb]))
+                }
+            });
+
+            concat_idents!(set_channel_gain_cal = set_, $channel_name, _gain_cal, {
+                #[doc=concat!(
+                    "Write to the `CH",
+                    $channel_num,
+                    "_GCAL_MSB` and `CH",
+                    $channel_num,
+                    "_GCAL_LSB` registers"
+                )]
+                fn set_channel_gain_cal(&mut self, gain_cal: GainCal) -> Result<(), E> {
+                    let [msb, lsb] = gain_cal.to_words();
+                    self.write_reg(registers::CHANNEL_GCAL_MSB_ADDRS[$channel_num], msb)?;
+                    self.write_reg(registers::CHANNEL_GCAL_LSB_ADDRS[$channel_num], lsb)
+                }
+            });
         }
     };
 }
 
-/// ADS131M ADC driver
-#[derive(Debug)]
-pub struct Ads131m<W, I, C: Ic> {
-    _intf: I,
-    _mode: Mode,
-    w: PhantomData<W>,
-    c: PhantomData<C>,
+macro_rules! impl_model {
+    ($model:ident, $channel_count_str:literal, [$($channel:ident),+]) => {
+        #[doc=concat!( "Driver for a TI ADS131M0", $channel_count_str, " ", $channel_count_str, "-channel 24-bit ADC\n\n[Datasheet](https://www.ti.com/lit/ds/symlink/ads131m0", $channel_count_str, ".pdf)")]
+        pub struct $model<E> {
+            inner: AdcInner<E>,
+        }
+
+        impl<E> AdcBase<E> for $model<E> {
+            fn transfer(&mut self, send: bool) -> bool {
+                self.inner.transfer(send)
+            }
+            fn get_mode_mut(&mut self) -> &mut Mode {
+                &mut self.inner.mode
+            }
+        }
+
+        impl<E> AdcCommon<E> for $model<E> {
+            fn open_with_mode(intf: bool, mode: Mode) -> Result<Self, E> {
+                Ok(Self {
+                    inner: AdcInner::new(intf, mode)?
+                })
+            }
+        }
+
+        $(impl<E> $channel<E> for $model<E> {})+
+    };
 }
 
-impl_open!(
-    "ADS131M02",
-    Ads131m02,
-    open_ads131m02,
-    open_ads131m02_with_mode
-);
+struct AdcInner<E> {
+    intf: bool,
+    mode: Mode,
+    e: PhantomData<E>,
+}
 
-impl_open!(
-    "ADS131M03",
-    Ads131m03,
-    open_ads131m03,
-    open_ads131m03_with_mode
-);
+impl<E> AdcInner<E> {
+    fn new(intf: bool, mode: Mode) -> Result<Self, E> {
+        unimplemented!()
+    }
 
-impl_open!(
-    "ADS131M04",
-    Ads131m04,
-    open_ads131m04,
-    open_ads131m04_with_mode
-);
+    // TODO: Figure out transfer signature
+    fn transfer(&mut self, send: bool) -> bool {
+        unimplemented!()
+    }
+}
 
-impl_open!(
-    "ADS131M06",
-    Ads131m06,
-    open_ads131m06,
-    open_ads131m06_with_mode
-);
+#[doc(hidden)]
+pub trait AdcBase<E> {
+    // TODO: Figure out transfer signature
+    fn transfer(&mut self, send: bool) -> bool;
+    fn get_mode_mut(&mut self) -> &mut Mode;
+}
 
-impl_open!(
-    "ADS131M08",
-    Ads131m08,
-    open_ads131m08,
-    open_ads131m08_with_mode
-);
-
-impl<W, I, C> Ads131m<W, I, C>
+/// Main ADC methods
+pub trait AdcCommon<E>
 where
-    I: Interface<W>,
-    W: From<u8> + Copy,
-    C: Ic,
+    Self: AdcBase<E> + Sized,
 {
+    /// Initialize an ADC driver from an [`embedded-hal`] SPI interface with a custom configuration
+    ///
+    /// The SPI interface must be configured for SPI mode 1
+    ///
+    /// [`embedded-hal`]: https://github.com/rust-embedded/embedded-hal
+    fn open_with_mode(intf: bool, mode: Mode) -> Result<Self, E>;
+
+    /// Initialize an ADC driver from an [`embedded-hal`] SPI interface
+    ///
+    /// The SPI interface must be configured for SPI mode 1
+    ///
+    /// This command assumes the device is in it's default state
+    ///
+    /// [`embedded-hal`]: https://github.com/rust-embedded/embedded-hal
+    fn open(intf: bool) -> Result<Self, E> {
+        Self::open_with_mode(intf, Mode::default())
+    }
+
     /// Read the ID register
-    pub fn get_id(&mut self) -> Result<Id, Error<I::Error>> {
-        let word = self.read_reg(ID_ADDR)?;
+    fn get_id(&mut self) -> Result<Id, E> {
+        let word = self.read_reg(registers::ID_ADDR)?;
         Ok(Id::from_word(word))
     }
 
     /// Read the STATUS register
-    pub fn get_status(&mut self) -> Result<Status, Error<I::Error>> {
-        let word = self.read_reg(STATUS_ADDR)?;
+    fn get_status(&mut self) -> Result<Status, E> {
+        let word = self.read_reg(registers::STATUS_ADDR)?;
         Ok(Status::from_word(word))
     }
 
     /// Read the MODE register
-    pub fn get_mode(&mut self) -> Result<Mode, Error<I::Error>> {
-        let word = self.read_reg(MODE_ADDR)?;
+    fn get_mode(&mut self) -> Result<Mode, E> {
+        let word = self.read_reg(registers::MODE_ADDR)?;
         Ok(Mode::from_word(word))
     }
 
     /// Write to the MODE register
-    pub fn set_mode(&mut self, mode: Mode) -> Result<(), Error<I::Error>> {
-        self.write_reg(MODE_ADDR, mode.to_word())
+    fn set_mode(&mut self, mode: Mode) -> Result<(), E> {
+        self.write_reg(registers::MODE_ADDR, mode.to_word())
     }
 
     /// Read the CLOCK register
-    pub fn get_clock(&mut self) -> Result<Clock, Error<I::Error>> {
-        let word = self.read_reg(CLOCK_ADDR)?;
+    fn get_clock(&mut self) -> Result<Clock, E> {
+        let word = self.read_reg(registers::CLOCK_ADDR)?;
         Ok(Clock::from_word(word))
     }
 
     /// Write to the CLOCK register
-    pub fn set_clock(&mut self, clock: Clock) -> Result<(), Error<I::Error>> {
-        self.write_reg(CLOCK_ADDR, clock.to_word())
+    fn set_clock(&mut self, clock: Clock) -> Result<(), E> {
+        self.write_reg(registers::CLOCK_ADDR, clock.to_word())
     }
 
     /// Read the GAIN1 register
-    pub fn get_gain(&mut self) -> Result<Gain, Error<I::Error>> {
-        let word = self.read_reg(GAIN_ADDR)?;
+    fn get_gain(&mut self) -> Result<Gain, E> {
+        let word = self.read_reg(registers::GAIN_ADDR)?;
         Ok(Gain::from_word(word))
     }
 
     /// Write to the GAIN1 register
-    pub fn set_gain(&mut self, gain: Gain) -> Result<(), Error<I::Error>> {
-        self.write_reg(GAIN_ADDR, gain.to_word())
+    fn set_gain(&mut self, gain: Gain) -> Result<(), E> {
+        self.write_reg(registers::GAIN_ADDR, gain.to_word())
     }
 
     /// Read the CFG register
-    pub fn get_config(&mut self) -> Result<Config, Error<I::Error>> {
-        let word = self.read_reg(CFG_ADDR)?;
+    fn get_config(&mut self) -> Result<Config, E> {
+        let word = self.read_reg(registers::CFG_ADDR)?;
         Ok(Config::from_word(word))
     }
 
     /// Write to the CFG register
-    pub fn set_config(&mut self, gain: Config) -> Result<(), Error<I::Error>> {
-        self.write_reg(CFG_ADDR, gain.to_word())
+    fn set_config(&mut self, gain: Config) -> Result<(), E> {
+        self.write_reg(registers::CFG_ADDR, gain.to_word())
     }
 
     /// Read the `THRSHLD_MSB` and `THRSHLD_LSB` registers
-    pub fn get_threshold(&mut self) -> Result<Threshold, Error<I::Error>> {
-        let msb = self.read_reg(THRSHLD_MSB_ADDR)?;
-        let lsb = self.read_reg(THRSHLD_LSB_ADDR)?;
+    fn get_threshold(&mut self) -> Result<Threshold, E> {
+        let msb = self.read_reg(registers::THRSHLD_MSB_ADDR)?;
+        let lsb = self.read_reg(registers::THRSHLD_LSB_ADDR)?;
         Ok(Threshold::from_words([msb, lsb]))
     }
 
     /// Write to the `THRSHLD_MSB` and `THRSHLD_LSB` registers
-    pub fn set_threshold(&mut self, threshold: Threshold) -> Result<(), Error<I::Error>> {
+    fn set_threshold(&mut self, threshold: Threshold) -> Result<(), E> {
         let [msb, lsb] = threshold.to_words();
-        self.write_reg(THRSHLD_MSB_ADDR, msb)?;
-        self.write_reg(THRSHLD_LSB_ADDR, lsb)
+        self.write_reg(registers::THRSHLD_MSB_ADDR, msb)?;
+        self.write_reg(registers::THRSHLD_LSB_ADDR, lsb)
     }
 
-    /// Read the `CH0_CFG` register
-    ///
-    /// TODO: Figure out how to handle multiple channels
-    pub fn get_channel_0_config(&mut self) -> Result<ChannelConfig, Error<I::Error>> {
-        let word = self.read_reg(CH0_CFG_ADDR)?;
-        Ok(ChannelConfig::from_word(word))
-    }
-
-    /// Write to the `CH0_CFG` register
-    ///
-    /// TODO: Figure out how to handle multiple channels
-    pub fn set_channel_0_config(&mut self, config: ChannelConfig) -> Result<(), Error<I::Error>> {
-        self.write_reg(CH0_CFG_ADDR, config.to_word())
-    }
-
-    /// Read the `CH0_OCAL_MSB` and `CH0_OCAL_LSB` registers
-    ///
-    /// TODO: Figure out how to handle multiple channels
-    pub fn get_channel_0_offset_cal(&mut self) -> Result<OffsetCal, Error<I::Error>> {
-        let msb = self.read_reg(CH0_OCAL_MSB_ADDR)?;
-        let lsb = self.read_reg(CH0_OCAL_LSB_ADDR)?;
-        Ok(OffsetCal::from_words([msb, lsb]))
-    }
-
-    /// Write to the `CH0_OCAL_MSB` and `CH0_OCAL_LSB` registers
-    ///
-    /// TODO: Figure out how to handle multiple channels
-    pub fn set_channel_0_offset_cal(
-        &mut self,
-        offset_cal: OffsetCal,
-    ) -> Result<(), Error<I::Error>> {
-        let [msb, lsb] = offset_cal.to_words();
-        self.write_reg(CH0_OCAL_MSB_ADDR, msb)?;
-        self.write_reg(CH0_OCAL_LSB_ADDR, lsb)
-    }
-
-    /// Read the `CH0_GCAL_MSB` and `CH0_GCAL_LSB` registers
-    ///
-    /// TODO: Figure out how to handle multiple channels
-    pub fn get_channel_0_gain_cal(&mut self) -> Result<GainCal, Error<I::Error>> {
-        let msb = self.read_reg(CH0_GCAL_MSB_ADDR)?;
-        let lsb = self.read_reg(CH0_GCAL_LSB_ADDR)?;
-        Ok(GainCal::from_words([msb, lsb]))
-    }
-
-    /// Write to the `CH0_GCAL_MSB` and `CH0_GCAL_LSB` registers
-    ///
-    /// TODO: Figure out how to handle multiple channels
-    pub fn set_channel_0_gain_cal(&mut self, gain_cal: GainCal) -> Result<(), Error<I::Error>> {
-        let [msb, lsb] = gain_cal.to_words();
-        self.write_reg(CH0_GCAL_MSB_ADDR, msb)?;
-        self.write_reg(CH0_GCAL_LSB_ADDR, lsb)
-    }
-
-    fn open(intf: I, mode: Mode) -> Result<Self, Error<I::Error>> {
-        let adc = Self {
-            _intf: intf,
-            _mode: mode,
-            w: PhantomData,
-            c: PhantomData,
-        };
-
-        Ok(adc)
-    }
-
-    fn read_reg(&mut self, _address: u8) -> Result<u16, Error<I::Error>> {
-        let _ = self;
+    #[doc(hidden)]
+    fn read_reg(&mut self, address: u8) -> Result<u16, E> {
         unimplemented!()
     }
 
-    fn write_reg(&mut self, _address: u8, _word: u16) -> Result<(), Error<I::Error>> {
+    #[doc(hidden)]
+    fn write_reg(&mut self, address: u8, word: u16) -> Result<(), E> {
         let _ = self;
         unimplemented!()
     }
 }
+
+impl_channel!(AdcChannel0, channel_0, 0);
+impl_channel!(AdcChannel1, channel_1, 1);
+impl_channel!(AdcChannel2, channel_2, 2);
+impl_channel!(AdcChannel3, channel_3, 3);
+impl_channel!(AdcChannel4, channel_4, 4);
+impl_channel!(AdcChannel5, channel_5, 5);
+impl_channel!(AdcChannel6, channel_6, 6);
+impl_channel!(AdcChannel7, channel_7, 7);
+
+impl_model!(Ads131m02, "2", [AdcChannel0, AdcChannel1]);
+impl_model!(Ads131m03, "3", [AdcChannel0, AdcChannel1, AdcChannel2]);
+impl_model!(
+    Ads131m04,
+    "4",
+    [AdcChannel0, AdcChannel1, AdcChannel2, AdcChannel3]
+);
+impl_model!(
+    Ads131m06,
+    "6",
+    [
+        AdcChannel0,
+        AdcChannel1,
+        AdcChannel2,
+        AdcChannel3,
+        AdcChannel4,
+        AdcChannel5
+    ]
+);
+impl_model!(
+    Ads131m08,
+    "8",
+    [
+        AdcChannel0,
+        AdcChannel1,
+        AdcChannel2,
+        AdcChannel3,
+        AdcChannel4,
+        AdcChannel5,
+        AdcChannel6,
+        AdcChannel7
+    ]
+);
