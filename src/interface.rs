@@ -6,12 +6,8 @@ use nb;
 use crate::Error;
 
 /// Helper trait for SPI interfaces with different word lengths
-pub trait Interface<W>
-where
-    Self: FullDuplex<W>,
-    W: From<u8> + Copy,
-{
-    /// Number of bytes in a word
+pub trait Interface<E, W: Copy> {
+    /// Length of a word in bytes
     const WORD_LEN: usize;
 
     /// Read and write some bytes on the SPI interface
@@ -20,52 +16,43 @@ where
     /// If input is shorter than output, the remaining bytes will be sent as zeros.
     /// If output is shorter than input, the extra received bytes will be dropped.
     ///
-    /// Panics if either buffer is not a multiple of `WORD_LEN` in length.
-    fn transfer(&mut self, send: &[u8], receive: &mut [u8]) -> Result<(), Error<Self::Error>> {
-        debug_assert!(send.len() % Self::WORD_LEN == 0);
-        debug_assert!(receive.len() % Self::WORD_LEN == 0);
+    /// Both buffer lengths MUST be a multiple of two.
+    ///
+    /// Panics if either buffer length is not a multiple of two.
+    fn transfer(&mut self, send: &[u8], receive: &mut [u8]) -> Result<(), Error<E>> {
+        debug_assert!(send.len() % 2 == 0);
+        debug_assert!(receive.len() % 2 == 0);
 
         let transfer_len = core::cmp::max(send.len(), receive.len());
         let mut bytes_read = 0;
         let mut bytes_written = 0;
-        let mut word_cache = None;
+        let mut word_cache: Option<W> = None;
 
         // Try to keep write buffer full
         while bytes_read < transfer_len || bytes_written < transfer_len {
+            // Write first
             if bytes_written < transfer_len {
-                if word_cache.is_none() {
-                    if bytes_written < send.len() {
-                        word_cache = Some(Self::pack_word(
-                            &send[transfer_len..(transfer_len + Self::WORD_LEN)],
-                        ));
-                    } else {
-                        word_cache = Some(0u8.into());
+                let word = match word_cache {
+                    Some(w) => w,
+                    None => {
+                        Self::encode_word(&send[bytes_written..(bytes_written + Self::WORD_LEN)])
                     }
-                }
+                };
 
-                if let Some(w) = word_cache {
-                    match self.send(w) {
-                        Ok(_) => {
-                            word_cache = None;
-                            bytes_written += Self::WORD_LEN;
-                        }
-                        Err(nb::Error::WouldBlock) => {}
-                        Err(nb::Error::Other(e)) => return Err(Error::SpiError(e)),
+                match self.write_word(word) {
+                    Ok(_) => {
+                        bytes_written += Self::WORD_LEN;
+                        word_cache = None;
                     }
+                    Err(nb::Error::WouldBlock) => word_cache = Some(word),
+                    Err(nb::Error::Other(e)) => return Err(Error::SpiError(e)),
                 }
             }
 
+            // Read only if more has been written
             if bytes_written > bytes_read && bytes_read < transfer_len {
-                match self.read() {
-                    Ok(w) => {
-                        if bytes_read < receive.len() {
-                            Self::unpack_word(
-                                w,
-                                &mut receive[transfer_len..(transfer_len + Self::WORD_LEN)],
-                            );
-                        }
-                        bytes_read += Self::WORD_LEN;
-                    }
+                match self.read_word(&mut receive[bytes_read..(bytes_read + Self::WORD_LEN)]) {
+                    Ok(_) => bytes_read += Self::WORD_LEN,
                     Err(nb::Error::WouldBlock) => {}
                     Err(nb::Error::Other(e)) => return Err(Error::SpiError(e)),
                 }
@@ -75,41 +62,55 @@ where
         Ok(())
     }
 
-    /// Unpack a word into a buffer
+    /// Attempt to read and decode a word to a buffer
     ///
-    /// Panics if buf if not `WORD_LEN` in length
-    fn unpack_word(word: W, buf: &mut [u8]);
+    /// Note: A word must be written before calling this
+    ///
+    /// Panics if buf length is not `Self::WORD_LEN`
+    fn read_word(&mut self, buf: &mut [u8]) -> nb::Result<(), E>;
 
-    /// Pack a word from some bytes
+    /// Encode a word from a buffer
     ///
-    /// Panics if buf if not `WORD_LEN` in length
-    fn pack_word(buf: &[u8]) -> W;
+    /// Panics if buf length is not `Self::WORD_LEN`
+    fn encode_word(buf: &[u8]) -> W;
+
+    /// Attempt to write a word
+    fn write_word(&mut self, word: W) -> nb::Result<(), E>;
 }
 
-impl<T: FullDuplex<u16>> Interface<u16> for T {
+impl<I: FullDuplex<u16, Error = E>, E> Interface<E, u16> for I {
     const WORD_LEN: usize = 2;
 
-    #[inline]
-    fn unpack_word(word: u16, buf: &mut [u8]) {
+    fn read_word(&mut self, buf: &mut [u8]) -> nb::Result<(), E> {
+        let word = self.read()?;
         buf.copy_from_slice(&word.to_be_bytes());
+        Ok(())
     }
 
-    #[inline]
-    fn pack_word(buf: &[u8]) -> u16 {
+    fn encode_word(buf: &[u8]) -> u16 {
         u16::from_be_bytes(buf.try_into().unwrap())
     }
+
+    fn write_word(&mut self, word: u16) -> nb::Result<(), E> {
+        self.send(word)
+    }
 }
 
-impl<T: FullDuplex<u8>> Interface<u8> for T {
+impl<I: FullDuplex<u8, Error = E>, E> Interface<E, u8> for I {
     const WORD_LEN: usize = 1;
 
-    #[inline]
-    fn unpack_word(word: u8, buf: &mut [u8]) {
-        buf[0] = word;
+    fn read_word(&mut self, buf: &mut [u8]) -> nb::Result<(), E> {
+        buf[0] = self.read()?;
+        Ok(())
     }
 
-    #[inline]
-    fn pack_word(buf: &[u8]) -> u8 {
+    fn encode_word(buf: &[u8]) -> u8 {
         buf[0]
     }
+
+    fn write_word(&mut self, word: u8) -> nb::Result<(), E> {
+        self.send(word)
+    }
 }
+
+// TODO: DMA Interfaces
