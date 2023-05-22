@@ -1,6 +1,6 @@
 [package]
 name = "ads131m"
-version = "0.1.0"
+version = "0.0.1"
 authors = ["Kinnon McAlister <kinnonmcalister@gmail.com>"]
 repository = "https://github.com/eloc3147/ads131m"
 license = "MIT OR Apache-2.0"
