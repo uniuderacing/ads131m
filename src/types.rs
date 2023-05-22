@@ -11,14 +11,14 @@ use num_enum::{IntoPrimitive, TryFromPrimitive};
 use ux::{u10, u24, u4};
 
 macro_rules! is_bit_set {
-    ($word:ident, $bit:literal) => {
+    ($word:expr, $bit:literal) => {
         ($word & (1 << $bit)) != 0
     };
 }
 
 /// SPI Word size configuration
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive, Sequence)]
-#[repr(u16)]
+#[repr(u8)]
 pub enum WordLength {
     /// 16-bit words
     Bits16 = 0,
@@ -38,7 +38,7 @@ pub enum WordLength {
 
 /// CRC implementation used for device communication
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive, Sequence)]
-#[repr(u16)]
+#[repr(u8)]
 pub enum CrcType {
     /// 16 bit CCITT.
     ///
@@ -52,7 +52,7 @@ pub enum CrcType {
 
 /// DRDY pin source selection
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive, Sequence)]
-#[repr(u16)]
+#[repr(u8)]
 pub enum DrdySource {
     /// Most lagging enabled channel
     ///
@@ -70,7 +70,7 @@ pub enum DrdySource {
 
 /// DRDY state when conversion data is not available
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive, Sequence)]
-#[repr(u16)]
+#[repr(u8)]
 pub enum DrdyNotReadyState {
     /// Logic high
     ///
@@ -84,7 +84,7 @@ pub enum DrdyNotReadyState {
 
 /// DRDY state when conversion data is available
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive, Sequence)]
-#[repr(u16)]
+#[repr(u8)]
 pub enum DrdyReadyState {
     /// Logic low
     ///
@@ -98,7 +98,7 @@ pub enum DrdyReadyState {
 
 /// Oversampling mode configuration
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive, Sequence)]
-#[repr(u16)]
+#[repr(u8)]
 pub enum OversamplingRatio {
     /// Oversampling ratio of 64
     #[num_enum(alternatives = [9..16])]
@@ -134,7 +134,7 @@ pub enum OversamplingRatio {
 
 /// Power mode setting
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive, Sequence)]
-#[repr(u16)]
+#[repr(u8)]
 pub enum PowerMode {
     /// Very low power mode
     VeryLowPower = 0,
@@ -152,7 +152,7 @@ pub enum PowerMode {
 
 /// PGA gain setting
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive, Sequence)]
-#[repr(u16)]
+#[repr(u8)]
 pub enum PgaGain {
     /// 1x gain
     ///
@@ -186,7 +186,7 @@ pub enum PgaGain {
 ///
 /// Delay in modulator clock periods before measurement begins
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive, Sequence)]
-#[repr(u16)]
+#[repr(u8)]
 pub enum GlobalChopDelay {
     /// 2 modulator clock delay
     Delay2 = 0,
@@ -243,7 +243,7 @@ pub enum GlobalChopDelay {
 /// Current-detect channel selection
 /// Channels required to trigger current-detect
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive, Sequence)]
-#[repr(u16)]
+#[repr(u8)]
 pub enum CurrentDetectChannels {
     /// Any channel
     ///
@@ -257,7 +257,7 @@ pub enum CurrentDetectChannels {
 
 /// Number of current-detect exceeded thresholds to trigger a detection
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive, Sequence)]
-#[repr(u16)]
+#[repr(u8)]
 pub enum CurrentDetectCount {
     /// 1 detection
     ///
@@ -289,7 +289,7 @@ pub enum CurrentDetectCount {
 
 /// Current-detect measurement length in conversion periods
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive, Sequence)]
-#[repr(u16)]
+#[repr(u8)]
 pub enum CurrentDetectLength {
     /// 128 conversion periods
     ///
@@ -321,7 +321,7 @@ pub enum CurrentDetectLength {
 
 /// DC block filter setting
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive, Sequence)]
-#[repr(u16)]
+#[repr(u8)]
 pub enum DcBlock {
     /// DC block filter disabled
     #[default]
@@ -375,7 +375,7 @@ pub enum DcBlock {
 
 /// Channel input selection
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive, Sequence)]
-#[repr(u16)]
+#[repr(u8)]
 pub enum ChannelMux {
     /// AINxP and AINxN
     ///
@@ -400,11 +400,11 @@ pub struct Id {
 }
 
 impl Id {
-    /// Decode a `Status` from it's register word
+    /// Decode a `Status` from it's register bytes
     #[must_use]
-    pub const fn from_word(word: u16) -> Self {
+    pub const fn from_be_bytes(bytes: [u8; 2]) -> Self {
         Self {
-            channel_count: u4::new(((word >> 8) & 0b1111) as u8),
+            channel_count: u4::new((bytes[0] & 0b1111) as u8),
         }
     }
 }
@@ -448,21 +448,21 @@ pub struct Status {
 }
 
 impl Status {
-    /// Decode a `Status` from it's register word
+    /// Decode a `Status` from it's register bytes
     #[must_use]
-    pub fn from_word(word: u16) -> Self {
+    pub fn from_be_bytes(bytes: [u8; 2]) -> Self {
         Self {
-            lock: is_bit_set!(word, 15),
-            resync: is_bit_set!(word, 14),
-            reg_map_crc_err: is_bit_set!(word, 13),
-            spi_crc_err: is_bit_set!(word, 12),
-            crc_type: CrcType::try_from((word >> 11) & 0b1).unwrap(),
-            reset: is_bit_set!(word, 10),
-            word_length: WordLength::try_from((word >> 8) & 0b11).unwrap(),
-            drdy0: is_bit_set!(word, 0),
-            drdy1: is_bit_set!(word, 1),
-            drdy2: is_bit_set!(word, 2),
-            drdy3: is_bit_set!(word, 3),
+            lock: is_bit_set!(bytes[0], 7),
+            resync: is_bit_set!(bytes[0], 6),
+            reg_map_crc_err: is_bit_set!(bytes[0], 5),
+            spi_crc_err: is_bit_set!(bytes[0], 4),
+            crc_type: CrcType::try_from((bytes[0] >> 3) & 0b1).unwrap(),
+            reset: is_bit_set!(bytes[0], 2),
+            word_length: WordLength::try_from(bytes[0] & 0b11).unwrap(),
+            drdy0: is_bit_set!(bytes[1], 0),
+            drdy1: is_bit_set!(bytes[1], 1),
+            drdy2: is_bit_set!(bytes[1], 2),
+            drdy3: is_bit_set!(bytes[1], 3),
         }
     }
 }
@@ -518,34 +518,36 @@ pub struct Mode {
 }
 
 impl Mode {
-    /// Decode a `Mode` from it's register word
+    /// Decode a `Mode` from it's register bytes
     #[must_use]
-    pub fn from_word(word: u16) -> Self {
+    pub fn from_be_bytes(bytes: [u8; 2]) -> Self {
         Self {
-            reg_crc_enable: is_bit_set!(word, 13),
-            spi_crc_enable: is_bit_set!(word, 12),
-            crc_type: CrcType::try_from((word >> 11) & 0b1).unwrap(),
-            reset: is_bit_set!(word, 10),
-            word_length: WordLength::try_from((word >> 8) & 0b11).unwrap(),
-            spi_timeout: is_bit_set!(word, 4),
-            drdy_source: DrdySource::try_from((word >> 2) & 0b11).unwrap(),
-            drdy_not_ready_state: DrdyNotReadyState::try_from((word >> 1) & 0b1).unwrap(),
-            drdy_ready_state: DrdyReadyState::try_from(word & 0b1).unwrap(),
+            reg_crc_enable: is_bit_set!(bytes[0], 5),
+            spi_crc_enable: is_bit_set!(bytes[0], 4),
+            crc_type: CrcType::try_from((bytes[0] >> 3) & 0b1).unwrap(),
+            reset: is_bit_set!(bytes[0], 2),
+            word_length: WordLength::try_from(bytes[0] & 0b11).unwrap(),
+            spi_timeout: is_bit_set!(bytes[1], 4),
+            drdy_source: DrdySource::try_from((bytes[1] >> 2) & 0b11).unwrap(),
+            drdy_not_ready_state: DrdyNotReadyState::try_from((bytes[1] >> 1) & 0b1).unwrap(),
+            drdy_ready_state: DrdyReadyState::try_from(bytes[1] & 0b1).unwrap(),
         }
     }
 
-    /// Returns the register word for this `Mode` configuration
+    /// Returns the register bytes for this `Mode` configuration
     #[must_use]
-    pub fn to_word(&self) -> u16 {
-        u16::from(self.reg_crc_enable) << 13
-            | u16::from(self.spi_crc_enable) << 12
-            | u16::from(self.crc_type) << 11
-            | u16::from(self.reset) << 10
-            | u16::from(self.word_length) << 8
-            | u16::from(self.spi_timeout) << 4
-            | u16::from(self.drdy_source) << 2
-            | u16::from(self.drdy_not_ready_state) << 1
-            | u16::from(self.drdy_ready_state)
+    pub fn to_be_bytes(&self) -> [u8; 2] {
+        [
+            u8::from(self.reg_crc_enable) << 5
+                | u8::from(self.spi_crc_enable) << 4
+                | u8::from(self.crc_type) << 3
+                | u8::from(self.reset) << 2
+                | u8::from(self.word_length) << 0,
+            u8::from(self.spi_timeout) << 4
+                | u8::from(self.drdy_source) << 2
+                | u8::from(self.drdy_not_ready_state) << 1
+                | u8::from(self.drdy_ready_state),
+        ]
     }
 }
 
@@ -588,29 +590,29 @@ pub struct Clock {
 }
 
 impl Clock {
-    /// Decode a `Clock` from it's register word
+    /// Decode a `Clock` from it's register bytes
     #[must_use]
-    pub fn from_word(word: u16) -> Self {
+    pub fn from_be_bytes(bytes: [u8; 2]) -> Self {
         Self {
-            channel0_en: is_bit_set!(word, 8),
-            channel1_en: is_bit_set!(word, 9),
-            channel2_en: is_bit_set!(word, 10),
-            channel3_en: is_bit_set!(word, 11),
-            oversampling_ratio: OversamplingRatio::try_from((word >> 2) & 0b1111).unwrap(),
-            power_mode: PowerMode::try_from(word & 0b11).unwrap(),
+            channel0_en: is_bit_set!(bytes[0], 0),
+            channel1_en: is_bit_set!(bytes[0], 1),
+            channel2_en: is_bit_set!(bytes[0], 2),
+            channel3_en: is_bit_set!(bytes[0], 3),
+            oversampling_ratio: OversamplingRatio::try_from((bytes[1] >> 2) & 0b1111).unwrap(),
+            power_mode: PowerMode::try_from(bytes[1] & 0b11).unwrap(),
         }
     }
 
-    /// Returns the register word for this `Clock` configuration
+    /// Returns the register bytes for this `Clock` configuration
     #[must_use]
-    pub fn to_word(&self) -> u16 {
-        u16::from(self.channel3_en) << 11
-            | u16::from(self.channel2_en) << 10
-            | u16::from(self.channel1_en) << 9
-            | u16::from(self.channel0_en) << 8
-            | u16::from(self.channel0_en) << 8
-            | u16::from(self.oversampling_ratio) << 2
-            | u16::from(self.power_mode)
+    pub fn to_be_bytes(&self) -> [u8; 2] {
+        [
+            u8::from(self.channel3_en) << 3
+                | u8::from(self.channel2_en) << 2
+                | u8::from(self.channel1_en) << 1
+                | u8::from(self.channel0_en) << 0,
+            u8::from(self.oversampling_ratio) << 2 | u8::from(self.power_mode),
+        ]
     }
 }
 
@@ -644,24 +646,24 @@ pub struct Gain {
 }
 
 impl Gain {
-    /// Decode a `Gain` from it's register word
+    /// Decode a `Gain` from it's register bytes
     #[must_use]
-    pub fn from_word(word: u16) -> Self {
+    pub fn from_be_bytes(bytes: [u8; 2]) -> Self {
         Self {
-            pga_gain0: PgaGain::try_from(word & 0b111).unwrap(),
-            pga_gain1: PgaGain::try_from((word >> 4) & 0b111).unwrap(),
-            pga_gain2: PgaGain::try_from((word >> 8) & 0b111).unwrap(),
-            pga_gain3: PgaGain::try_from((word >> 12) & 0b111).unwrap(),
+            pga_gain2: PgaGain::try_from(bytes[0] & 0b111).unwrap(),
+            pga_gain3: PgaGain::try_from((bytes[0] >> 4) & 0b111).unwrap(),
+            pga_gain0: PgaGain::try_from(bytes[1] & 0b111).unwrap(),
+            pga_gain1: PgaGain::try_from((bytes[1] >> 4) & 0b111).unwrap(),
         }
     }
 
-    /// Returns the register word for this `Gain` configuration
+    /// Returns the register bytes for this `Gain` configuration
     #[must_use]
-    pub fn to_word(&self) -> u16 {
-        u16::from(self.pga_gain0)
-            | u16::from(self.pga_gain1) << 4
-            | u16::from(self.pga_gain2) << 8
-            | u16::from(self.pga_gain3) << 12
+    pub fn to_be_bytes(&self) -> [u8; 2] {
+        [
+            u8::from(self.pga_gain2) | u8::from(self.pga_gain3) << 4,
+            u8::from(self.pga_gain0) | u8::from(self.pga_gain1) << 4,
+        ]
     }
 }
 
@@ -689,28 +691,30 @@ pub struct Config {
 }
 
 impl Config {
-    /// Decode a `Config` from it's register word
+    /// Decode a `Config` from it's register bytes
     #[must_use]
-    pub fn from_word(word: u16) -> Self {
+    pub fn from_be_bytes(bytes: [u8; 2]) -> Self {
         Self {
-            global_chop_delay: GlobalChopDelay::try_from((word >> 9) & 0b1111).unwrap(),
-            global_chop_enable: is_bit_set!(word, 8),
-            current_detect_channels: CurrentDetectChannels::try_from((word >> 7) & 0b1).unwrap(),
-            current_detect_count: CurrentDetectCount::try_from((word >> 4) & 0b111).unwrap(),
-            current_detect_length: CurrentDetectLength::try_from((word >> 1) & 0b111).unwrap(),
-            current_detect_enable: is_bit_set!(word, 0),
+            global_chop_delay: GlobalChopDelay::try_from((bytes[0] >> 1) & 0b1111).unwrap(),
+            global_chop_enable: is_bit_set!(bytes[0], 0),
+            current_detect_channels: CurrentDetectChannels::try_from((bytes[1] >> 7) & 0b1)
+                .unwrap(),
+            current_detect_count: CurrentDetectCount::try_from((bytes[1] >> 4) & 0b111).unwrap(),
+            current_detect_length: CurrentDetectLength::try_from((bytes[1] >> 1) & 0b111).unwrap(),
+            current_detect_enable: is_bit_set!(bytes[1], 0),
         }
     }
 
-    /// Returns the register word for this `Config` configuration
+    /// Returns the register bytes for this `Config` configuration
     #[must_use]
-    pub fn to_word(&self) -> u16 {
-        u16::from(self.global_chop_delay) << 9
-            | u16::from(self.global_chop_enable) << 8
-            | u16::from(self.current_detect_channels) << 7
-            | u16::from(self.current_detect_count) << 4
-            | u16::from(self.current_detect_length) << 1
-            | u16::from(self.current_detect_enable)
+    pub fn to_be_bytes(&self) -> [u8; 2] {
+        [
+            u8::from(self.global_chop_delay) << 1 | u8::from(self.global_chop_enable),
+            u8::from(self.current_detect_channels) << 7
+                | u8::from(self.current_detect_count) << 4
+                | u8::from(self.current_detect_length) << 1
+                | u8::from(self.current_detect_enable),
+        ]
     }
 }
 
@@ -725,27 +729,31 @@ pub struct Threshold {
 }
 
 impl Threshold {
-    /// Decode a `Threshold` from it's register words
+    /// Decode a `Threshold` from it's register bytes
     ///
     /// Words must be MSB first
     #[must_use]
-    pub fn from_words(words: [u16; 2]) -> Self {
+    pub fn from_be_bytes(bytes: [u8; 4]) -> Self {
         Self {
-            current_detect_threshold: u24::new(u32::from(words[0]) << 8 | u32::from(words[1]) >> 8),
-            dc_block: DcBlock::try_from(words[1] & 0b1111).unwrap(),
+            current_detect_threshold: u24::from(bytes[0]) << 16
+                | u24::from(bytes[1]) << 8
+                | u24::from(bytes[2]),
+            dc_block: DcBlock::try_from(bytes[3] & 0b1111).unwrap(),
         }
     }
 
-    /// Returns the register words for this `Threshold` configuration
+    /// Returns the register bytes for this `Threshold` configuration
     ///
     /// Words are MSB first
     #[must_use]
-    pub fn to_words(&self) -> [u16; 2] {
+    pub fn to_be_bytes(&self) -> [u8; 4] {
         let threshold = u32::from(self.current_detect_threshold);
 
         [
-            (threshold >> 8) as u16,
-            ((threshold as u16) << 8) | u16::from(self.dc_block),
+            (threshold >> 16) as u8,
+            (threshold >> 8) as u8,
+            threshold as u8,
+            u8::from(self.dc_block),
         ]
     }
 }
@@ -764,20 +772,24 @@ pub struct ChannelConfig {
 }
 
 impl ChannelConfig {
-    /// Decode a `ChannelConfig` from it's register word
+    /// Decode a `ChannelConfig` from it's register bytes
     #[must_use]
-    pub fn from_word(word: u16) -> Self {
+    pub fn from_be_bytes(bytes: [u8; 2]) -> Self {
         Self {
-            phase: u10::new(word >> 6),
-            dc_block_disable: is_bit_set!(word, 2),
-            mux: ChannelMux::try_from(word & 0b11).unwrap(),
+            phase: u10::from(bytes[0]) << 2 | u10::from(bytes[1] >> 6),
+            dc_block_disable: is_bit_set!(bytes[1], 2),
+            mux: ChannelMux::try_from(bytes[1] & 0b11).unwrap(),
         }
     }
 
-    /// Returns the register word for this `ChannelConfig`
+    /// Returns the register bytes for this `ChannelConfig`
     #[must_use]
-    pub fn to_word(&self) -> u16 {
-        u16::from(self.phase) << 6 | u16::from(self.dc_block_disable) << 2 | u16::from(self.mux)
+    pub fn to_be_bytes(&self) -> [u8; 2] {
+        let phase = u16::from(self.phase);
+        [
+            (phase >> 2) as u8,
+            (phase << 6) as u8 | u8::from(self.dc_block_disable) << 2 | u8::from(self.mux),
+        ]
     }
 }
 
@@ -789,24 +801,23 @@ pub struct OffsetCal {
 }
 
 impl OffsetCal {
-    /// Decode an `OffsetCal` from it's register words
+    /// Decode an `OffsetCal` from it's register bytes
     ///
     /// Words must be MSB first
     #[must_use]
-    pub fn from_words(words: [u16; 2]) -> Self {
+    pub fn from_be_bytes(bytes: [u8; 4]) -> Self {
         Self {
-            offset: u24::new(u32::from(words[0]) << 8 | u32::from(words[1]) >> 8),
+            offset: u24::from(bytes[0]) << 16 | u24::from(bytes[1]) << 8 | u24::from(bytes[2]),
         }
     }
 
-    /// Returns the register words for this `OffsetCal` configuration
+    /// Returns the register bytes for this `OffsetCal` configuration
     ///
     /// Words are MSB first
     #[must_use]
-    pub fn to_words(&self) -> [u16; 2] {
+    pub fn to_be_bytes(&self) -> [u8; 4] {
         let offset = u32::from(self.offset);
-
-        [(offset >> 8) as u16, ((offset as u16) << 8)]
+        [(offset >> 16) as u8, (offset >> 8) as u8, offset as u8, 0]
     }
 }
 
@@ -818,24 +829,23 @@ pub struct GainCal {
 }
 
 impl GainCal {
-    /// Decode an `GainCal` from it's register words
+    /// Decode an `GainCal` from it's register bytes
     ///
     /// Words must be MSB first
     #[must_use]
-    pub fn from_words(words: [u16; 2]) -> Self {
+    pub fn from_be_bytes(bytes: [u8; 4]) -> Self {
         Self {
-            gain: u24::new(u32::from(words[0]) << 8 | u32::from(words[1]) >> 8),
+            gain: u24::from(bytes[0]) << 16 | u24::from(bytes[1]) << 8 | u24::from(bytes[2]),
         }
     }
 
-    /// Returns the register words for this `GainCal` configuration
+    /// Returns the register bytes for this `GainCal` configuration
     ///
     /// Words are MSB first
     #[must_use]
-    pub fn to_words(&self) -> [u16; 2] {
+    pub fn to_be_bytes(&self) -> [u8; 4] {
         let gain = u32::from(self.gain);
-
-        [(gain >> 8) as u16, ((gain as u16) << 8)]
+        [(gain >> 16) as u8, (gain >> 8) as u8, gain as u8, 0]
     }
 }
 
@@ -854,14 +864,14 @@ mod tests {
     #[test]
     fn id_decode() {
         for (word, count) in [
-            (0x2200, 2),
-            (0x2300, 3),
-            (0x2400, 4),
-            (0x2600, 6),
-            (0x2800, 8),
+            ([0x22, 0x00], 2),
+            ([0x23, 0x00], 3),
+            ([0x24, 0x00], 4),
+            ([0x26, 0x00], 6),
+            ([0x28, 0x00], 8),
         ] {
             assert_eq!(
-                Id::from_word(word),
+                Id::from_be_bytes(word),
                 Id {
                     channel_count: u4::new(count)
                 }
@@ -871,13 +881,13 @@ mod tests {
 
     #[test]
     fn status_default() {
-        assert_eq!(Status::from_word(0x500), Status::default())
+        assert_eq!(Status::from_be_bytes([0x05, 0x00]), Status::default())
     }
 
     #[test]
     fn mode_default() {
-        assert_eq!(Mode::default().to_word(), 0x510);
-        assert_eq!(Mode::from_word(0x510), Mode::default())
+        assert_eq!(Mode::default().to_be_bytes(), [0x05, 0x10]);
+        assert_eq!(Mode::from_be_bytes([0x05, 0x10]), Mode::default())
     }
 
     #[test]
@@ -900,7 +910,7 @@ mod tests {
                                     drdy_ready_state,
                                 };
 
-                                assert_eq!(mode, Mode::from_word(mode.to_word()))
+                                assert_eq!(mode, Mode::from_be_bytes(mode.to_be_bytes()))
                             }
                         }
                     }
@@ -911,8 +921,8 @@ mod tests {
 
     #[test]
     fn clock_default() {
-        assert_eq!(Clock::default().to_word(), 0xF0E);
-        assert_eq!(Clock::from_word(0xF0E), Clock::default())
+        assert_eq!(Clock::default().to_be_bytes(), [0x0F, 0x0E]);
+        assert_eq!(Clock::from_be_bytes([0x0F, 0x0E]), Clock::default())
     }
 
     #[test]
@@ -929,7 +939,7 @@ mod tests {
                         power_mode,
                     };
 
-                    assert_eq!(clock, Clock::from_word(clock.to_word()))
+                    assert_eq!(clock, Clock::from_be_bytes(clock.to_be_bytes()))
                 }
             }
         }
@@ -937,8 +947,8 @@ mod tests {
 
     #[test]
     fn gain_default() {
-        assert_eq!(Gain::default().to_word(), 0);
-        assert_eq!(Gain::from_word(0), Gain::default())
+        assert_eq!(Gain::default().to_be_bytes(), [0x00, 0x00]);
+        assert_eq!(Gain::from_be_bytes([0x00, 0x00]), Gain::default())
     }
 
     #[test]
@@ -951,14 +961,14 @@ mod tests {
                 pga_gain3: gains,
             };
 
-            assert_eq!(gain, Gain::from_word(gain.to_word()))
+            assert_eq!(gain, Gain::from_be_bytes(gain.to_be_bytes()))
         }
     }
 
     #[test]
     fn config_default() {
-        assert_eq!(Config::default().to_word(), 0x600);
-        assert_eq!(Config::from_word(0x600), Config::default())
+        assert_eq!(Config::default().to_be_bytes(), [0x06, 0x00]);
+        assert_eq!(Config::from_be_bytes([0x06, 0x00]), Config::default())
     }
 
     #[test]
@@ -977,7 +987,7 @@ mod tests {
                                 current_detect_enable: bools,
                             };
 
-                            assert_eq!(config, Config::from_word(config.to_word()))
+                            assert_eq!(config, Config::from_be_bytes(config.to_be_bytes()))
                         }
                     }
                 }
@@ -987,8 +997,11 @@ mod tests {
 
     #[test]
     fn threshold_default() {
-        assert_eq!(Threshold::default().to_words(), [0, 0]);
-        assert_eq!(Threshold::from_words([0, 0]), Threshold::default())
+        assert_eq!(Threshold::default().to_be_bytes(), [0x00, 0x00, 0x00, 0x00]);
+        assert_eq!(
+            Threshold::from_be_bytes([0x00, 0x00, 0x00, 0x00]),
+            Threshold::default()
+        )
     }
 
     #[test]
@@ -1002,15 +1015,18 @@ mod tests {
                     dc_block,
                 };
 
-                assert_eq!(threshold, Threshold::from_words(threshold.to_words()))
+                assert_eq!(threshold, Threshold::from_be_bytes(threshold.to_be_bytes()))
             }
         }
     }
 
     #[test]
     fn channel_config_default() {
-        assert_eq!(ChannelConfig::default().to_word(), 0);
-        assert_eq!(ChannelConfig::from_word(0), ChannelConfig::default())
+        assert_eq!(ChannelConfig::default().to_be_bytes(), [0x00, 0x00]);
+        assert_eq!(
+            ChannelConfig::from_be_bytes([0x00, 0x00]),
+            ChannelConfig::default()
+        )
     }
 
     #[test]
@@ -1024,7 +1040,7 @@ mod tests {
                         mux,
                     };
 
-                    assert_eq!(config, ChannelConfig::from_word(config.to_word()))
+                    assert_eq!(config, ChannelConfig::from_be_bytes(config.to_be_bytes()))
                 }
             }
         }
@@ -1032,8 +1048,11 @@ mod tests {
 
     #[test]
     fn channel_offset_cal_default() {
-        assert_eq!(OffsetCal::default().to_words(), [0, 0]);
-        assert_eq!(OffsetCal::from_words([0, 0]), OffsetCal::default())
+        assert_eq!(OffsetCal::default().to_be_bytes(), [0x00, 0x00, 0x00, 0x00]);
+        assert_eq!(
+            OffsetCal::from_be_bytes([0x00, 0x00, 0x00, 0x00]),
+            OffsetCal::default()
+        )
     }
 
     #[test]
@@ -1045,14 +1064,20 @@ mod tests {
                 offset: u24::new(offset),
             };
 
-            assert_eq!(offset_cal, OffsetCal::from_words(offset_cal.to_words()));
+            assert_eq!(
+                offset_cal,
+                OffsetCal::from_be_bytes(offset_cal.to_be_bytes())
+            );
         }
     }
 
     #[test]
     fn channel_gain_cal_default() {
-        assert_eq!(GainCal::default().to_words(), [0x8000, 0]);
-        assert_eq!(GainCal::from_words([0x8000, 0]), GainCal::default())
+        assert_eq!(GainCal::default().to_be_bytes(), [0x80, 0x00, 0x00, 0x00]);
+        assert_eq!(
+            GainCal::from_be_bytes([0x80, 0x00, 0x00, 0x00]),
+            GainCal::default()
+        )
     }
 
     #[test]
@@ -1064,7 +1089,7 @@ mod tests {
                 gain: u24::new(gain),
             };
 
-            assert_eq!(gain_cal, GainCal::from_words(gain_cal.to_words()));
+            assert_eq!(gain_cal, GainCal::from_be_bytes(gain_cal.to_be_bytes()));
         }
     }
 }
