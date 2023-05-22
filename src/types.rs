@@ -404,7 +404,7 @@ impl Id {
     #[must_use]
     pub const fn from_be_bytes(bytes: [u8; 2]) -> Self {
         Self {
-            channel_count: u4::new((bytes[0] & 0b1111) as u8),
+            channel_count: u4::new(bytes[0] & 0b1111),
         }
     }
 }
@@ -542,7 +542,7 @@ impl Mode {
                 | u8::from(self.spi_crc_enable) << 4
                 | u8::from(self.crc_type) << 3
                 | u8::from(self.reset) << 2
-                | u8::from(self.word_length) << 0,
+                | u8::from(self.word_length),
             u8::from(self.spi_timeout) << 4
                 | u8::from(self.drdy_source) << 2
                 | u8::from(self.drdy_not_ready_state) << 1
@@ -610,7 +610,7 @@ impl Clock {
             u8::from(self.channel3_en) << 3
                 | u8::from(self.channel2_en) << 2
                 | u8::from(self.channel1_en) << 1
-                | u8::from(self.channel0_en) << 0,
+                | u8::from(self.channel0_en),
             u8::from(self.oversampling_ratio) << 2 | u8::from(self.power_mode),
         ]
     }

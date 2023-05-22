@@ -5,7 +5,7 @@ use nb;
 
 use crate::Error;
 
-/// Helper trait for SPI interfaces with different word lengths
+/// Trait for interacting with SPI interfaces with different word sizes
 pub trait Interface<E, W: Copy> {
     /// Length of a word in bytes
     const WORD_LEN: usize;
@@ -19,48 +19,15 @@ pub trait Interface<E, W: Copy> {
     /// Both buffer lengths MUST be a multiple of two.
     ///
     /// Panics if either buffer length is not a multiple of two.
-    fn transfer(&mut self, send: &[u8], receive: &mut [u8]) -> Result<(), Error<E>> {
-        debug_assert!(send.len() % 2 == 0);
-        debug_assert!(receive.len() % 2 == 0);
+    fn transfer(&mut self, send: &[u8], receive: &mut [u8]) -> Result<(), Error<E>>;
+}
 
-        let transfer_len = core::cmp::max(send.len(), receive.len());
-        let mut bytes_read = 0;
-        let mut bytes_written = 0;
-        let mut word_cache: Option<W> = None;
-
-        // Try to keep write buffer full
-        while bytes_read < transfer_len || bytes_written < transfer_len {
-            // Write first
-            if bytes_written < transfer_len {
-                let word = match word_cache {
-                    Some(w) => w,
-                    None => {
-                        Self::encode_word(&send[bytes_written..(bytes_written + Self::WORD_LEN)])
-                    }
-                };
-
-                match self.write_word(word) {
-                    Ok(_) => {
-                        bytes_written += Self::WORD_LEN;
-                        word_cache = None;
-                    }
-                    Err(nb::Error::WouldBlock) => word_cache = Some(word),
-                    Err(nb::Error::Other(e)) => return Err(Error::SpiError(e)),
-                }
-            }
-
-            // Read only if more has been written
-            if bytes_written > bytes_read && bytes_read < transfer_len {
-                match self.read_word(&mut receive[bytes_read..(bytes_read + Self::WORD_LEN)]) {
-                    Ok(_) => bytes_read += Self::WORD_LEN,
-                    Err(nb::Error::WouldBlock) => {}
-                    Err(nb::Error::Other(e)) => return Err(Error::SpiError(e)),
-                }
-            }
-        }
-
-        Ok(())
-    }
+/// Trait for interacting with an [`embedded-hal`] SPI interface
+///
+/// [`embedded-hal`]: https://github.com/rust-embedded/embedded-hal
+pub trait WordTransfer<E, W: Copy> {
+    /// Length of a word in bytes
+    const WORD_LEN: usize;
 
     /// Attempt to read and decode a word to a buffer
     ///
@@ -78,7 +45,49 @@ pub trait Interface<E, W: Copy> {
     fn write_word(&mut self, word: W) -> nb::Result<(), E>;
 }
 
-impl<I: FullDuplex<u16, Error = E>, E> Interface<E, u16> for I {
+impl<T: WordTransfer<E, W>, E, W: Copy> Interface<E, W> for T {
+    const WORD_LEN: usize = Self::WORD_LEN;
+
+    fn transfer(&mut self, send: &[u8], receive: &mut [u8]) -> Result<(), Error<E>> {
+        debug_assert!(send.len() % 2 == 0);
+        debug_assert!(receive.len() % 2 == 0);
+
+        let transfer_len = core::cmp::max(send.len(), receive.len());
+        let mut bytes_read = 0;
+        let mut bytes_written = 0;
+        let mut word_cache: Option<W> = None;
+
+        // Try to keep write buffer full
+        while bytes_read < transfer_len || bytes_written < transfer_len {
+            // Write first
+            if bytes_written < transfer_len {
+                // Cache the word that bytes_written currently points to
+                let word = word_cache.take().unwrap_or_else(|| {
+                    Self::encode_word(&send[bytes_written..(bytes_written + Self::WORD_LEN)])
+                });
+
+                match self.write_word(word) {
+                    Ok(_) => bytes_written += Self::WORD_LEN,
+                    Err(nb::Error::WouldBlock) => word_cache = Some(word),
+                    Err(nb::Error::Other(e)) => return Err(Error::SpiError(e)),
+                }
+            }
+
+            // Read only if more has been written
+            if bytes_written > bytes_read && bytes_read < transfer_len {
+                match self.read_word(&mut receive[bytes_read..(bytes_read + Self::WORD_LEN)]) {
+                    Ok(_) => bytes_read += Self::WORD_LEN,
+                    Err(nb::Error::WouldBlock) => {}
+                    Err(nb::Error::Other(e)) => return Err(Error::SpiError(e)),
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl<I: FullDuplex<u16, Error = E>, E> WordTransfer<E, u16> for I {
     const WORD_LEN: usize = 2;
 
     fn read_word(&mut self, buf: &mut [u8]) -> nb::Result<(), E> {
@@ -96,7 +105,7 @@ impl<I: FullDuplex<u16, Error = E>, E> Interface<E, u16> for I {
     }
 }
 
-impl<I: FullDuplex<u8, Error = E>, E> Interface<E, u8> for I {
+impl<I: FullDuplex<u8, Error = E>, E> WordTransfer<E, u8> for I {
     const WORD_LEN: usize = 1;
 
     fn read_word(&mut self, buf: &mut [u8]) -> nb::Result<(), E> {
