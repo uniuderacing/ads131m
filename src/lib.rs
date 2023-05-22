@@ -58,7 +58,7 @@ pub mod types;
 
 pub use device::{
     AdcChannel0, AdcChannel1, AdcChannel2, AdcChannel3, AdcChannel4, AdcChannel5, AdcChannel6,
-    AdcChannel7, AdcCommon, Ads131m02, Ads131m03, Ads131m04, Ads131m06, Ads131m08,
+    AdcChannel7, Ads131m,
 };
 pub use error::Error;
 pub use interface::Interface;
