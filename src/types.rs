@@ -6,8 +6,6 @@
     clippy::struct_excessive_bools
 )]
 
-use core::num::NonZeroU8;
-
 use enum_iterator::{self, Sequence};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use ux::{u10, u24, u4, u6};
@@ -905,20 +903,14 @@ pub enum Command {
     Lock,
     /// Unlock the interface after it has been locked
     Unlock,
-    /// Read one or more registers beginning at `address`
-    ReadRegister {
-        /// Number of registers to read
-        count: RegisterCount,
-        /// Starting address to read registers from
-        address: u6,
-    },
-    /// Write one or more registers beginning at `address`
-    WriteRegister {
-        /// Number of registers to write
-        count: RegisterCount,
-        /// Starting address to write registers from
-        address: u6,
-    },
+    /// Read a register at an address
+    ///
+    /// Reading multiple registers in one frame is not currently supported
+    ReadRegister(u6),
+    /// Write a register at an address
+    ///
+    /// Writing multiple registers in one frame is not currently supported
+    WriteRegister(u6),
 }
 
 impl Command {
@@ -934,13 +926,13 @@ impl Command {
             Self::Wakeup => [0x00, 0x33],
             Self::Lock => [0x05, 0x55],
             Self::Unlock => [0x06, 0x55],
-            Self::ReadRegister { count, address } => [
+            Self::ReadRegister(address) => [
                 0xA0 | u8::from(*address) >> 1,
-                (u8::from(*address) & 0b1) << 7 | (count.get() - 1),
+                (u8::from(*address) & 0b1) << 7,
             ],
-            Self::WriteRegister { count, address } => [
+            Self::WriteRegister(address) => [
                 0x60 | u8::from(*address) >> 1,
-                (u8::from(*address) & 0b1) << 7 | (count.get() - 1),
+                (u8::from(*address) & 0b1) << 7,
             ],
         }
     }
@@ -1191,52 +1183,28 @@ mod tests {
         assert_eq!(Command::Lock.to_be_bytes(), [0b0000_0101, 0b0101_0101]);
         assert_eq!(Command::Unlock.to_be_bytes(), [0b0000_0110, 0b0101_0101]);
         assert_eq!(
-            Command::ReadRegister {
-                count: RegisterCount::new(1).unwrap(),
-                address: u6::new(0)
-            }
-            .to_be_bytes(),
+            Command::ReadRegister(u6::new(0)).to_be_bytes(),
             [0b1010_0000, 0b0000_0000]
         );
         assert_eq!(
-            Command::ReadRegister {
-                count: RegisterCount::new(2).unwrap(),
-                address: u6::new(5)
-            }
-            .to_be_bytes(),
-            [0b1010_0010, 0b1000_0001]
+            Command::ReadRegister(u6::new(5)).to_be_bytes(),
+            [0b1010_0010, 0b1000_0000]
         );
         assert_eq!(
-            Command::ReadRegister {
-                count: RegisterCount::new(128).unwrap(),
-                address: u6::new(63)
-            }
-            .to_be_bytes(),
-            [0b1011_1111, 0b1111_1111]
+            Command::ReadRegister(u6::new(63)).to_be_bytes(),
+            [0b1011_1111, 0b1000_0000]
         );
         assert_eq!(
-            Command::WriteRegister {
-                count: RegisterCount::new(1).unwrap(),
-                address: u6::new(0)
-            }
-            .to_be_bytes(),
+            Command::WriteRegister(u6::new(0)).to_be_bytes(),
             [0b0110_0000, 0b0000_0000]
         );
         assert_eq!(
-            Command::WriteRegister {
-                count: RegisterCount::new(2).unwrap(),
-                address: u6::new(5)
-            }
-            .to_be_bytes(),
-            [0b0110_0010, 0b1000_0001]
+            Command::WriteRegister(u6::new(5)).to_be_bytes(),
+            [0b0110_0010, 0b1000_0000]
         );
         assert_eq!(
-            Command::WriteRegister {
-                count: RegisterCount::new(128).unwrap(),
-                address: u6::new(63)
-            }
-            .to_be_bytes(),
-            [0b0111_1111, 0b1111_1111]
+            Command::WriteRegister(u6::new(63)).to_be_bytes(),
+            [0b0111_1111, 0b1000_0000]
         );
     }
 }

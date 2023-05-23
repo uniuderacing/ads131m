@@ -5,10 +5,11 @@ use core::marker::PhantomData;
 use crate::interface::Interface;
 use crate::registers;
 use crate::types::{
-    ChannelConfig, Clock, Config, Gain, GainCal, Id, Mode, OffsetCal, Status, Threshold,
+    ChannelConfig, Clock, Command, Config, Gain, GainCal, Id, Mode, OffsetCal, Status, Threshold,
 };
 use crate::Error;
 use concat_idents::concat_idents;
+use ux::u6;
 
 // Maybe some fancy const stuff can be done instead of this at some point.
 // Just having a channel_idx input would not be checked at compile time
@@ -250,12 +251,20 @@ where
             w: PhantomData,
         })
     }
+
+    // fn transfer(&mut self, command: Command) -> Result<Response, Error<E>> {}
+
+    fn transfer_frame(&mut self, command: Command) -> Result<Response, Error<E>> {
+        unimplemented!()
+    }
 }
+
+pub struct Response {}
 
 #[doc(hidden)]
 pub trait RegisterAccess<E> {
-    fn read_reg(&mut self, address: u8) -> Result<[u8; 2], Error<E>>;
-    fn write_reg(&mut self, address: u8, bytes: [u8; 2]) -> Result<(), Error<E>>;
+    fn read_reg(&mut self, address: u6) -> Result<[u8; 2], Error<E>>;
+    fn write_reg(&mut self, address: u6, bytes: [u8; 2]) -> Result<(), Error<E>>;
 }
 
 impl<I, E, W, const C: usize> RegisterAccess<E> for Ads131m<I, E, W, C>
@@ -263,11 +272,11 @@ where
     I: Interface<E, W>,
     W: Copy,
 {
-    fn read_reg(&mut self, address: u8) -> Result<[u8; 2], Error<E>> {
+    fn read_reg(&mut self, address: u6) -> Result<[u8; 2], Error<E>> {
         unimplemented!()
     }
 
-    fn write_reg(&mut self, address: u8, bytes: [u8; 2]) -> Result<(), Error<E>> {
+    fn write_reg(&mut self, address: u6, bytes: [u8; 2]) -> Result<(), Error<E>> {
         unimplemented!()
     }
 }
