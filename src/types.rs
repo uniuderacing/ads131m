@@ -859,6 +859,38 @@ impl Default for GainCal {
     }
 }
 
+/// Address to an ADC register
+pub struct RegisterCount(u8);
+
+impl RegisterCount {
+    /// Create a new register count
+    ///
+    /// If 0 < n <= 128 Some will be returned, otherwise None
+    pub const fn new(n: u8) -> Option<Self> {
+        if n > 0 && n <= 128 {
+            Some(Self(n))
+        } else {
+            None
+        }
+    }
+
+    /// Create a new register count, rounding to the closest valid count
+    pub const fn new_bounded(n: u8) -> Self {
+        if n == 0 {
+            Self(1)
+        } else if n <= 128 {
+            Self(n)
+        } else {
+            Self(128)
+        }
+    }
+
+    /// Get the count as a `u8`
+    pub const fn get(&self) -> u8 {
+        self.0
+    }
+}
+
 /// Command for the ADC
 pub enum Command {
     /// No operation
@@ -874,13 +906,19 @@ pub enum Command {
     /// Unlock the interface after it has been locked
     Unlock,
     /// Read one or more registers beginning at `address`
-    ///
-    /// `count` MUST not exceed 128 or else some bits will be masked off, causing communication issues
-    ReadRegister { count: NonZeroU8, address: u6 },
+    ReadRegister {
+        /// Number of registers to read
+        count: RegisterCount,
+        /// Starting address to read registers from
+        address: u6,
+    },
     /// Write one or more registers beginning at `address`
-    ///
-    /// `count` MUST not exceed 128 or else some bits will be masked off, causing communication issues
-    WriteRegister { count: NonZeroU8, address: u6 },
+    WriteRegister {
+        /// Number of registers to write
+        count: RegisterCount,
+        /// Starting address to write registers from
+        address: u6,
+    },
 }
 
 impl Command {
@@ -898,7 +936,7 @@ impl Command {
             Self::Unlock => [0x06, 0x55],
             Self::ReadRegister { count, address } => [
                 0xA0 | u8::from(*address) >> 1,
-                (u8::from(*address) & 0b1) << 7 | ((count.get() - 1) & 0x7F),
+                (u8::from(*address) & 0b1) << 7 | (count.get() - 1),
             ],
             Self::WriteRegister { count, address } => [
                 0x60 | u8::from(*address) >> 1,
@@ -1154,7 +1192,7 @@ mod tests {
         assert_eq!(Command::Unlock.to_be_bytes(), [0b0000_0110, 0b0101_0101]);
         assert_eq!(
             Command::ReadRegister {
-                count: NonZeroU8::new(1).unwrap(),
+                count: RegisterCount::new(1).unwrap(),
                 address: u6::new(0)
             }
             .to_be_bytes(),
@@ -1162,7 +1200,7 @@ mod tests {
         );
         assert_eq!(
             Command::ReadRegister {
-                count: NonZeroU8::new(2).unwrap(),
+                count: RegisterCount::new(2).unwrap(),
                 address: u6::new(5)
             }
             .to_be_bytes(),
@@ -1170,7 +1208,7 @@ mod tests {
         );
         assert_eq!(
             Command::ReadRegister {
-                count: NonZeroU8::new(128).unwrap(),
+                count: RegisterCount::new(128).unwrap(),
                 address: u6::new(63)
             }
             .to_be_bytes(),
@@ -1178,7 +1216,7 @@ mod tests {
         );
         assert_eq!(
             Command::WriteRegister {
-                count: NonZeroU8::new(1).unwrap(),
+                count: RegisterCount::new(1).unwrap(),
                 address: u6::new(0)
             }
             .to_be_bytes(),
@@ -1186,7 +1224,7 @@ mod tests {
         );
         assert_eq!(
             Command::WriteRegister {
-                count: NonZeroU8::new(2).unwrap(),
+                count: RegisterCount::new(2).unwrap(),
                 address: u6::new(5)
             }
             .to_be_bytes(),
@@ -1194,7 +1232,7 @@ mod tests {
         );
         assert_eq!(
             Command::WriteRegister {
-                count: NonZeroU8::new(128).unwrap(),
+                count: RegisterCount::new(128).unwrap(),
                 address: u6::new(63)
             }
             .to_be_bytes(),
