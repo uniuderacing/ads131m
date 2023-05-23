@@ -12,9 +12,9 @@ pub trait Interface<E, W: Copy> {
 
     /// Read and write some bytes on the SPI interface
     ///
-    /// The transaction will be the length of input or output, whichever is longer.
-    /// If input is shorter than output, the remaining bytes will be sent as zeros.
-    /// If output is shorter than input, the extra received bytes will be dropped.
+    /// The transaction will be the length of the `send` or `receive` buffer, whichever is longer.
+    /// If `send` is shorter than `receive`, the remaining bytes will be sent as zeros.
+    /// If `receive` is shorter than `send`, the remaining bytes will be dropped.
     ///
     /// Both buffer lengths MUST be a multiple of two.
     ///
