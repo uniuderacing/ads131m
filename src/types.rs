@@ -6,9 +6,11 @@
     clippy::struct_excessive_bools
 )]
 
+use core::num::NonZeroU8;
+
 use enum_iterator::{self, Sequence};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
-use ux::{u10, u24, u4};
+use ux::{u10, u24, u4, u6};
 
 macro_rules! is_bit_set {
     ($word:expr, $bit:literal) => {
@@ -393,7 +395,7 @@ pub enum ChannelMux {
     NegativeTest = 3,
 }
 
-/// Device ID register
+/// Device `ID` register
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Id {
     channel_count: u4,
@@ -409,7 +411,7 @@ impl Id {
     }
 }
 
-/// Device STATUS register
+/// Device `STATUS` register
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Status {
     /// Whether the SPI interface is locked
@@ -485,7 +487,7 @@ impl Default for Status {
     }
 }
 
-/// Device MODE register
+/// Device `MODE` register
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Mode {
     /// Whether register map CRC checking is enabled
@@ -567,7 +569,7 @@ impl Default for Mode {
     }
 }
 
-/// Device CLOCK register
+/// Device `CLOCK` register
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Clock {
     /// Channel 0 ADC enable
@@ -629,7 +631,7 @@ impl Default for Clock {
     }
 }
 
-/// Device GAIN1 register
+/// Device `GAIN1` register
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Gain {
     /// PGA gain selection for channel 0
@@ -667,7 +669,7 @@ impl Gain {
     }
 }
 
-/// Device CFG register
+/// Device `CFG` register
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Config {
     /// Global-chop delay
@@ -853,6 +855,55 @@ impl Default for GainCal {
     fn default() -> Self {
         Self {
             gain: u24::new(0x0080_0000),
+        }
+    }
+}
+
+/// Command for the ADC
+pub enum Command {
+    /// No operation
+    Null,
+    /// Reset the device
+    Reset,
+    /// Put the device in standby mode
+    Standby,
+    /// Wake the device from standby mode to conversion mode
+    Wakeup,
+    /// Lock the interface such that only the `Null`, `Unlock`, and `ReadRegister` commands are valid
+    Lock,
+    /// Unlock the interface after it has been locked
+    Unlock,
+    /// Read one or more registers beginning at `address`
+    ///
+    /// `count` MUST not exceed 128 or else some bits will be masked off, causing communication issues
+    ReadRegister { count: NonZeroU8, address: u6 },
+    /// Write one or more registers beginning at `address`
+    ///
+    /// `count` MUST not exceed 128 or else some bits will be masked off, causing communication issues
+    WriteRegister { count: NonZeroU8, address: u6 },
+}
+
+impl Command {
+    /// Returns the command bytes for this `Command` instance
+    ///
+    /// Words are MSB first
+    #[must_use]
+    pub fn to_be_bytes(&self) -> [u8; 2] {
+        match self {
+            Self::Null => [0x00, 0x00],
+            Self::Reset => [0x00, 0x11],
+            Self::Standby => [0x00, 0x22],
+            Self::Wakeup => [0x00, 0x33],
+            Self::Lock => [0x05, 0x55],
+            Self::Unlock => [0x06, 0x55],
+            Self::ReadRegister { count, address } => [
+                0xA0 | u8::from(*address) >> 1,
+                (u8::from(*address) & 0b1) << 7 | ((count.get() - 1) & 0x7F),
+            ],
+            Self::WriteRegister { count, address } => [
+                0x60 | u8::from(*address) >> 1,
+                (u8::from(*address) & 0b1) << 7 | (count.get() - 1),
+            ],
         }
     }
 }
@@ -1091,5 +1142,63 @@ mod tests {
 
             assert_eq!(gain_cal, GainCal::from_be_bytes(gain_cal.to_be_bytes()));
         }
+    }
+
+    #[test]
+    fn command_encode() {
+        assert_eq!(Command::Null.to_be_bytes(), [0b0000_0000, 0b0000_0000]);
+        assert_eq!(Command::Reset.to_be_bytes(), [0b0000_0000, 0b0001_0001]);
+        assert_eq!(Command::Standby.to_be_bytes(), [0b0000_0000, 0b0010_0010]);
+        assert_eq!(Command::Wakeup.to_be_bytes(), [0b0000_0000, 0b0011_0011]);
+        assert_eq!(Command::Lock.to_be_bytes(), [0b0000_0101, 0b0101_0101]);
+        assert_eq!(Command::Unlock.to_be_bytes(), [0b0000_0110, 0b0101_0101]);
+        assert_eq!(
+            Command::ReadRegister {
+                count: NonZeroU8::new(1).unwrap(),
+                address: u6::new(0)
+            }
+            .to_be_bytes(),
+            [0b1010_0000, 0b0000_0000]
+        );
+        assert_eq!(
+            Command::ReadRegister {
+                count: NonZeroU8::new(2).unwrap(),
+                address: u6::new(5)
+            }
+            .to_be_bytes(),
+            [0b1010_0010, 0b1000_0001]
+        );
+        assert_eq!(
+            Command::ReadRegister {
+                count: NonZeroU8::new(128).unwrap(),
+                address: u6::new(63)
+            }
+            .to_be_bytes(),
+            [0b1011_1111, 0b1111_1111]
+        );
+        assert_eq!(
+            Command::WriteRegister {
+                count: NonZeroU8::new(1).unwrap(),
+                address: u6::new(0)
+            }
+            .to_be_bytes(),
+            [0b0110_0000, 0b0000_0000]
+        );
+        assert_eq!(
+            Command::WriteRegister {
+                count: NonZeroU8::new(2).unwrap(),
+                address: u6::new(5)
+            }
+            .to_be_bytes(),
+            [0b0110_0010, 0b1000_0001]
+        );
+        assert_eq!(
+            Command::WriteRegister {
+                count: NonZeroU8::new(128).unwrap(),
+                address: u6::new(63)
+            }
+            .to_be_bytes(),
+            [0b0111_1111, 0b1111_1111]
+        );
     }
 }
