@@ -5,11 +5,17 @@ use core::marker::PhantomData;
 use crate::interface::Interface;
 use crate::registers;
 use crate::types::{
-    ChannelConfig, Clock, Command, Config, Gain, GainCal, Id, Mode, OffsetCal, Status, Threshold,
+    ChannelConfig, Clock, Command, Config, CrcType, Gain, GainCal, Id, Mode, OffsetCal, Status,
+    Threshold, WordLength,
 };
 use crate::Error;
 use concat_idents::concat_idents;
+use crc::{Crc, CRC_16_CMS, CRC_16_IBM_3740};
 use ux::u6;
+
+// Since no const-generic math, we have to use the max possible buffer size
+// 32-bit words (4 bytes) * ( 1 response word + 8 channel data + 1 CRC word)
+const BUF_SIZE: usize = 4 * (1 + 8 + 1);
 
 // Maybe some fancy const stuff can be done instead of this at some point.
 // Just having a channel_idx input would not be checked at compile time
@@ -164,6 +170,10 @@ macro_rules! impl_model {
 pub struct Ads131m<I: Interface<E, W>, E, W: Copy, const C: usize> {
     intf: I,
     mode: Mode,
+    read_buf: [u8; BUF_SIZE],
+    write_buf: [u8; BUF_SIZE],
+    crc_table: Crc<u16>,
+    word_len: usize,
     e: PhantomData<E>,
     w: PhantomData<W>,
 }
@@ -186,14 +196,24 @@ where
     }
 
     /// Read the `MODE` register
+    ///
+    /// This also updates the internal cache of the device mode, which can change how the driver communicates
     pub fn get_mode(&mut self) -> Result<Mode, Error<E>> {
         let bytes = self.read_reg(registers::MODE_ADDR)?;
-        Ok(Mode::from_be_bytes(bytes))
+        let mode = Mode::from_be_bytes(bytes);
+
+        self.process_new_mode(mode.clone());
+        Ok(mode)
     }
 
     /// Write to the `MODE` register
+    ///
+    /// This also updates the internal cache of the device mode, which can change how the driver communicates
     pub fn set_mode(&mut self, mode: Mode) -> Result<(), Error<E>> {
-        self.write_reg(registers::MODE_ADDR, mode.to_be_bytes())
+        self.write_reg(registers::MODE_ADDR, mode.to_be_bytes())?;
+
+        self.process_new_mode(mode);
+        Ok(())
     }
 
     /// Read the `CLOCK` register
@@ -244,22 +264,129 @@ where
     }
 
     fn new(intf: I, mode: Mode) -> Result<Self, Error<E>> {
+        let crc_alg = match mode.crc_type {
+            CrcType::Ccitt => &CRC_16_CMS,
+            CrcType::Ansi => &CRC_16_IBM_3740,
+        };
+
+        let word_len = match mode.word_length {
+            WordLength::Bits16 => 2,
+            WordLength::Bits24 => 3,
+            _ => 4,
+        };
+
         Ok(Self {
             intf,
             mode,
+            read_buf: [0; BUF_SIZE],
+            write_buf: [0; BUF_SIZE],
+            crc_table: Crc::<u16>::new(crc_alg),
+            word_len,
             e: PhantomData,
             w: PhantomData,
         })
     }
 
-    // fn transfer(&mut self, command: Command) -> Result<Response, Error<E>> {}
+    fn process_new_mode(&mut self, mode: Mode) {
+        let crc_alg = match mode.crc_type {
+            CrcType::Ccitt => &CRC_16_CMS,
+            CrcType::Ansi => &CRC_16_IBM_3740,
+        };
 
-    fn transfer_frame(&mut self, command: Command) -> Result<Response, Error<E>> {
-        unimplemented!()
+        let word_len = match mode.word_length {
+            WordLength::Bits16 => 2,
+            WordLength::Bits24 => 3,
+            _ => 4,
+        };
+
+        self.crc_table = Crc::<u16>::new(crc_alg);
+        self.word_len = word_len;
+    }
+
+    fn transfer_frame(&mut self, command: Command) -> Result<Response<C>, Error<E>> {
+        let mut bytes_written = 0;
+
+        // Commands are always 2 bytes
+        self.write_buf[0..2].copy_from_slice(&command.to_be_bytes());
+        bytes_written += 2;
+
+        while bytes_written < self.word_len {
+            self.write_buf[bytes_written] = 0;
+            bytes_written += 1;
+        }
+
+        if self.mode.spi_crc_enable {
+            // CRCs are always 2 bytes
+            let write_crc = self.crc_table.checksum(&self.write_buf[..bytes_written]);
+            self.write_buf[bytes_written..bytes_written + 2]
+                .copy_from_slice(&write_crc.to_be_bytes());
+            bytes_written += 2;
+        }
+
+        // Don't need to pad CRC as transfer does that automatically
+
+        let mut read_len = (1 + C + 1) * self.word_len;
+
+        // This will only happen for ADS131M03 with 24bit word len
+        // This will avoid a panic, but I have no idea how that device will handle a padded transaction
+        // TODO: Test this
+        if read_len % 2 == 1 {
+            read_len += 1;
+        }
+
+        self.intf.transfer(
+            &self.write_buf[..bytes_written],
+            &mut self.read_buf[..read_len],
+        )?;
+
+        // Responses are always 2 bytes
+        let response: [u8; 2] = self.read_buf[..2].try_into().unwrap();
+
+        let mut sample_data = [[0; 3]; C];
+        for channel in 0..C {
+            let word_idx = (1 + channel) * self.word_len;
+            sample_data[channel] = match self.mode.word_length {
+                WordLength::Bits16 => [self.read_buf[word_idx], self.read_buf[word_idx + 1], 0],
+                WordLength::Bits24 | WordLength::Bits32Zero => [
+                    self.read_buf[word_idx],
+                    self.read_buf[word_idx + 1],
+                    self.read_buf[word_idx + 2],
+                ],
+                WordLength::Bits32Signed => [
+                    self.read_buf[word_idx + 1],
+                    self.read_buf[word_idx + 2],
+                    self.read_buf[word_idx + 3],
+                ],
+            };
+        }
+
+        let resp_crc_idx = (1 + C) * self.word_len;
+
+        // CRCs are always 2 bytes
+        let resp_crc = u16::from_be_bytes(
+            self.read_buf[resp_crc_idx..resp_crc_idx + 2]
+                .try_into()
+                .unwrap(),
+        );
+        let computed_crc = self.crc_table.checksum(&self.read_buf[..resp_crc_idx]);
+        if resp_crc != computed_crc {
+            return Err(Error::ReceiveCrc {
+                computed: computed_crc,
+                received: resp_crc,
+            });
+        }
+
+        Ok(Response {
+            response,
+            sample_data,
+        })
     }
 }
 
-pub struct Response {}
+pub struct Response<const C: usize> {
+    response: [u8; 2],
+    sample_data: [[u8; 3]; C],
+}
 
 #[doc(hidden)]
 pub trait RegisterAccess<E> {

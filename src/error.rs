@@ -2,8 +2,15 @@
 
 /// The main error type
 pub enum Error<S> {
-    /// Error originating in the SPI interface
+    /// Error from the inner SPI interface
     SpiError(S),
+    /// CRC checksum error on a received SPI message
+    ReceiveCrc {
+        /// The computed CRC checksum
+        computed: u16,
+        /// The received CRC checksum
+        received: u16,
+    },
 }
 
 impl<S> From<S> for Error<S> {
