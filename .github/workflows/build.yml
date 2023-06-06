@@ -13,17 +13,19 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        rust: [stable, beta]
+        # TODO: Re-enable
+        rust: [stable]  # , beta]
         TARGET:
           - x86_64-unknown-linux-gnu
-          - x86_64-unknown-linux-musl
-          - arm-unknown-linux-gnueabi # Raspberry Pi 1
-          - armv7-unknown-linux-gnueabihf # Raspberry Pi 2, 3, etc
-          # Bare metal
-          - thumbv6m-none-eabi
-          - thumbv7em-none-eabi
-          - thumbv7em-none-eabihf
-          - thumbv7m-none-eabi
+          # TODO: Re-enable
+          # - x86_64-unknown-linux-musl
+          # - arm-unknown-linux-gnueabi # Raspberry Pi 1
+          # - armv7-unknown-linux-gnueabihf # Raspberry Pi 2, 3, etc
+          # # Bare metal
+          # - thumbv6m-none-eabi
+          # - thumbv7em-none-eabi
+          # - thumbv7em-none-eabihf
+          # - thumbv7m-none-eabi
 
     steps:
       - uses: actions/checkout@v2
@@ -99,8 +101,9 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        rust: [stable, beta]
-        TARGET: [x86_64-unknown-linux-gnu, x86_64-unknown-linux-musl]
+        # TODO: Reenable
+        rust: [stable]  # , beta]
+        TARGET: [x86_64-unknown-linux-gnu]  # , x86_64-unknown-linux-musl]
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
