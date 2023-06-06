@@ -178,19 +178,19 @@ pub struct Ads131m<I: Interface<E, W>, E, W: Copy, const C: usize> {
     w: PhantomData<W>,
 }
 
-impl<I, E, W, const C: usize> Ads131m<I, E, W, C>
+impl<Intf, IntfError, IntfWord, const CHANNELS: usize> Ads131m<Intf, IntfError, IntfWord, CHANNELS>
 where
-    I: Interface<E, W>,
-    W: Copy,
+    Intf: Interface<IntfError, IntfWord>,
+    IntfWord: Copy,
 {
     /// Read the `ID` register
-    pub fn get_id(&mut self) -> Result<Id, Error<E>> {
+    pub fn get_id(&mut self) -> Result<Id, Error<IntfError>> {
         let bytes = self.read_reg(registers::ID_ADDR)?;
         Ok(Id::from_be_bytes(bytes))
     }
 
     /// Read the `STATUS` register
-    pub fn get_status(&mut self) -> Result<Status, Error<E>> {
+    pub fn get_status(&mut self) -> Result<Status, Error<IntfError>> {
         let bytes = self.read_reg(registers::STATUS_ADDR)?;
         Ok(Status::from_be_bytes(bytes))
     }
@@ -198,7 +198,7 @@ where
     /// Read the `MODE` register
     ///
     /// This also updates the internal cache of the device mode, which can change how the driver communicates
-    pub fn get_mode(&mut self) -> Result<Mode, Error<E>> {
+    pub fn get_mode(&mut self) -> Result<Mode, Error<IntfError>> {
         let bytes = self.read_reg(registers::MODE_ADDR)?;
         let mode = Mode::from_be_bytes(bytes);
 
@@ -209,7 +209,7 @@ where
     /// Write to the `MODE` register
     ///
     /// This also updates the internal cache of the device mode, which can change how the driver communicates
-    pub fn set_mode(&mut self, mode: Mode) -> Result<(), Error<E>> {
+    pub fn set_mode(&mut self, mode: Mode) -> Result<(), Error<IntfError>> {
         self.write_reg(registers::MODE_ADDR, mode.to_be_bytes())?;
 
         self.process_new_mode(mode);
@@ -217,53 +217,53 @@ where
     }
 
     /// Read the `CLOCK` register
-    pub fn get_clock(&mut self) -> Result<Clock, Error<E>> {
+    pub fn get_clock(&mut self) -> Result<Clock, Error<IntfError>> {
         let bytes = self.read_reg(registers::CLOCK_ADDR)?;
         Ok(Clock::from_be_bytes(bytes))
     }
 
     /// Write to the `CLOCK` register
-    pub fn set_clock(&mut self, clock: Clock) -> Result<(), Error<E>> {
+    pub fn set_clock(&mut self, clock: Clock) -> Result<(), Error<IntfError>> {
         self.write_reg(registers::CLOCK_ADDR, clock.to_be_bytes())
     }
 
     /// Read the GAIN1 register
-    pub fn get_gain(&mut self) -> Result<Gain, Error<E>> {
+    pub fn get_gain(&mut self) -> Result<Gain, Error<IntfError>> {
         let bytes = self.read_reg(registers::GAIN_ADDR)?;
         Ok(Gain::from_be_bytes(bytes))
     }
 
     /// Write to the `GAIN1` register
-    pub fn set_gain(&mut self, gain: Gain) -> Result<(), Error<E>> {
+    pub fn set_gain(&mut self, gain: Gain) -> Result<(), Error<IntfError>> {
         self.write_reg(registers::GAIN_ADDR, gain.to_be_bytes())
     }
 
     /// Read the `CFG` register
-    pub fn get_config(&mut self) -> Result<Config, Error<E>> {
+    pub fn get_config(&mut self) -> Result<Config, Error<IntfError>> {
         let bytes = self.read_reg(registers::CFG_ADDR)?;
         Ok(Config::from_be_bytes(bytes))
     }
 
     /// Write to the `CFG` register
-    pub fn set_config(&mut self, gain: Config) -> Result<(), Error<E>> {
+    pub fn set_config(&mut self, gain: Config) -> Result<(), Error<IntfError>> {
         self.write_reg(registers::CFG_ADDR, gain.to_be_bytes())
     }
 
     /// Read the `THRSHLD_MSB` and `THRSHLD_LSB` registers
-    pub fn get_threshold(&mut self) -> Result<Threshold, Error<E>> {
+    pub fn get_threshold(&mut self) -> Result<Threshold, Error<IntfError>> {
         let [b0, b1] = self.read_reg(registers::THRSHLD_MSB_ADDR)?;
         let [b2, b3] = self.read_reg(registers::THRSHLD_LSB_ADDR)?;
         Ok(Threshold::from_be_bytes([b0, b1, b2, b3]))
     }
 
     /// Write to the `THRSHLD_MSB` and `THRSHLD_LSB` registers
-    pub fn set_threshold(&mut self, threshold: Threshold) -> Result<(), Error<E>> {
+    pub fn set_threshold(&mut self, threshold: Threshold) -> Result<(), Error<IntfError>> {
         let [b0, b1, b2, b3] = threshold.to_be_bytes();
         self.write_reg(registers::THRSHLD_MSB_ADDR, [b0, b1])?;
         self.write_reg(registers::THRSHLD_LSB_ADDR, [b2, b3])
     }
 
-    fn new(intf: I, mode: Mode) -> Result<Self, Error<E>> {
+    fn new(intf: Intf, mode: Mode) -> Result<Self, Error<IntfError>> {
         let crc_alg = match mode.crc_type {
             CrcType::Ccitt => &CRC_16_CMS,
             CrcType::Ansi => &CRC_16_IBM_3740,
@@ -303,7 +303,7 @@ where
         self.word_len = word_len;
     }
 
-    fn transfer_frame(&mut self, command: Command) -> Result<Response<C>, Error<E>> {
+    fn transfer_frame(&mut self, command: Command) -> Result<Response<CHANNELS>, Error<IntfError>> {
         let mut bytes_written = 0;
 
         // Commands are always 2 bytes
@@ -325,7 +325,7 @@ where
 
         // Don't need to pad CRC as transfer does that automatically
 
-        let mut read_len = (1 + C + 1) * self.word_len;
+        let mut read_len = (1 + CHANNELS + 1) * self.word_len;
 
         // This will only happen for ADS131M03 with 24bit word len
         // This will avoid a panic, but I have no idea how that device will handle a padded transaction
@@ -342,8 +342,8 @@ where
         // Responses are always 2 bytes
         let response: [u8; 2] = self.read_buf[..2].try_into().unwrap();
 
-        let mut sample_data = [[0; 3]; C];
-        for channel in 0..C {
+        let mut sample_data = [[0; 3]; CHANNELS];
+        for channel in 0..CHANNELS {
             let word_idx = (1 + channel) * self.word_len;
             sample_data[channel] = match self.mode.word_length {
                 WordLength::Bits16 => [self.read_buf[word_idx], self.read_buf[word_idx + 1], 0],
@@ -360,7 +360,7 @@ where
             };
         }
 
-        let resp_crc_idx = (1 + C) * self.word_len;
+        let resp_crc_idx = (1 + CHANNELS) * self.word_len;
 
         // CRCs are always 2 bytes
         let resp_crc = u16::from_be_bytes(
