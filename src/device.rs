@@ -5,8 +5,8 @@ use core::marker::PhantomData;
 use crate::interface::Interface;
 use crate::registers;
 use crate::types::{
-    ChannelConfig, Clock, Command, Config, CrcType, Gain, GainCal, Id, Mode, OffsetCal, Status,
-    Threshold, WordLength,
+    ChannelConfig, Clock, Command, Config, CrcType, Gain, GainCal, Id, Mode, OffsetCal, Response,
+    Status, Threshold, WordLength,
 };
 use crate::Error;
 use concat_idents::concat_idents;
@@ -168,12 +168,16 @@ macro_rules! impl_model {
 ///
 /// TODO: Examples
 pub struct Ads131m<I: Interface<E, W>, E, W: Copy, const C: usize> {
+    // Comms
     intf: I,
-    mode: Mode,
     read_buf: [u8; BUF_SIZE],
     write_buf: [u8; BUF_SIZE],
+    // Mode
     crc_table: Crc<u16>,
     word_len: usize,
+    word_packing: WordLength,
+    spi_crc_enable: bool,
+    //Type stuff
     e: PhantomData<E>,
     w: PhantomData<W>,
 }
@@ -183,6 +187,65 @@ where
     Intf: Interface<IntfError, IntfWord>,
     IntfWord: Copy,
 {
+    /// Reset the device to it's default state.
+    ///
+    /// The device must not be used again for 5us while the registers stabilize
+    ///
+    /// This also updates the internal cache of the device mode, which can change how the driver communicates
+    pub fn reset(&mut self) -> Result<(), Error<IntfError>> {
+        // TODO: Do something with these samples
+        let (_, samples) = self.send_simple_command(Command::Reset)?;
+        self.process_new_mode(Mode::default());
+        Ok(())
+    }
+
+    /// Place the device in a low power standby mode
+    /// This disables all device channels and powers down non essential circuitry
+    /// The sample clock should be disabled after this command to maximize power savings
+    pub fn standby(&mut self) -> Result<(), Error<IntfError>> {
+        // TODO: Do something with these samples
+        let (_, samples_1) = self.send_simple_command(Command::Standby)?;
+        let (resp, samples_2) = self.send_simple_command(Command::Null)?;
+        match Response::try_from_be_bytes(resp) {
+            Some(Response::Standby) => Ok(()),
+            e => Err(Error::UnexpectedResponse(e)),
+        }
+    }
+
+    /// Wake the device from standby mode
+    /// The sample clock should be enables after this command
+    pub fn wakeup(&mut self) -> Result<(), Error<IntfError>> {
+        // TODO: Do something with these samples
+        let (_, samples_1) = self.send_simple_command(Command::Wakeup)?;
+        let (resp, samples_2) = self.send_simple_command(Command::Null)?;
+        match Response::try_from_be_bytes(resp) {
+            Some(Response::Wakeup) => Ok(()),
+            e => Err(Error::UnexpectedResponse(e)),
+        }
+    }
+
+    /// Lock the device to only respond to the Null, Read Register, and Unlock commands
+    pub fn lock(&mut self) -> Result<(), Error<IntfError>> {
+        // TODO: Do something with these samples
+        let (_, samples_1) = self.send_simple_command(Command::Lock)?;
+        let (resp, samples_2) = self.send_simple_command(Command::Null)?;
+        match Response::try_from_be_bytes(resp) {
+            Some(Response::Lock) => Ok(()),
+            e => Err(Error::UnexpectedResponse(e)),
+        }
+    }
+
+    /// Unlock the device if it was locked
+    pub fn unlock(&mut self) -> Result<(), Error<IntfError>> {
+        // TODO: Do something with these samples
+        let (_, samples_1) = self.send_simple_command(Command::Unlock)?;
+        let (resp, samples_2) = self.send_simple_command(Command::Null)?;
+        match Response::try_from_be_bytes(resp) {
+            Some(Response::Unlock) => Ok(()),
+            e => Err(Error::UnexpectedResponse(e)),
+        }
+    }
+
     /// Read the `ID` register
     pub fn get_id(&mut self) -> Result<Id, Error<IntfError>> {
         let bytes = self.read_reg(registers::ID_ADDR)?;
@@ -264,27 +327,20 @@ where
     }
 
     fn new(intf: Intf, mode: Mode) -> Result<Self, Error<IntfError>> {
-        let crc_alg = match mode.crc_type {
-            CrcType::Ccitt => &CRC_16_CMS,
-            CrcType::Ansi => &CRC_16_IBM_3740,
-        };
-
-        let word_len = match mode.word_length {
-            WordLength::Bits16 => 2,
-            WordLength::Bits24 => 3,
-            _ => 4,
-        };
-
-        Ok(Self {
+        let mut driver = Self {
             intf,
-            mode,
             read_buf: [0; BUF_SIZE],
             write_buf: [0; BUF_SIZE],
-            crc_table: Crc::<u16>::new(crc_alg),
-            word_len,
+            crc_table: Crc::<u16>::new(&CRC_16_CMS),
+            word_len: 2,
+            word_packing: WordLength::Bits16,
+            spi_crc_enable: false,
             e: PhantomData,
             w: PhantomData,
-        })
+        };
+        driver.process_new_mode(mode);
+
+        Ok(driver)
     }
 
     fn process_new_mode(&mut self, mode: Mode) {
@@ -301,9 +357,14 @@ where
 
         self.crc_table = Crc::<u16>::new(crc_alg);
         self.word_len = word_len;
+        self.word_packing = mode.word_length;
+        self.spi_crc_enable = mode.spi_crc_enable;
     }
 
-    fn transfer_frame(&mut self, command: Command) -> Result<Response<CHANNELS>, Error<IntfError>> {
+    fn send_simple_command(
+        &mut self,
+        command: Command,
+    ) -> Result<([u8; 2], [[u8; 3]; CHANNELS]), Error<IntfError>> {
         let mut bytes_written = 0;
 
         // Commands are always 2 bytes
@@ -315,77 +376,89 @@ where
             bytes_written += 1;
         }
 
-        if self.mode.spi_crc_enable {
+        let read_len = (1 + CHANNELS) * self.word_len;
+        self.transfer_frame(bytes_written, read_len, command != Command::Reset)?;
+
+        // Responses are always 2 bytes
+        let response: [u8; 2] = self.read_buf[..2].try_into().unwrap();
+        let sample_data =
+            self.decode_samples(&self.read_buf[self.word_len..self.word_len * (CHANNELS + 1)]);
+
+        Ok((response, sample_data))
+    }
+
+    /// Exchange a single SPI frame with the ADC
+    /// Panics if `command_len` or `resp_len` is greater than `BUF_SIZE` - `self.word_len`
+    fn transfer_frame(
+        &mut self,
+        command_len: usize,
+        read_len: usize,
+        check_resp_crc: bool,
+    ) -> Result<(), Error<IntfError>> {
+        let mut crc_len = 0;
+
+        if self.spi_crc_enable {
             // CRCs are always 2 bytes
-            let write_crc = self.crc_table.checksum(&self.write_buf[..bytes_written]);
-            self.write_buf[bytes_written..bytes_written + 2]
-                .copy_from_slice(&write_crc.to_be_bytes());
-            bytes_written += 2;
+            let write_crc = self.crc_table.checksum(&self.write_buf[..command_len]);
+            // Only write 2 bytes of CRC, transfer will pad remaining bytes out to word length
+            self.write_buf[command_len..command_len + 2].copy_from_slice(&write_crc.to_be_bytes());
+            crc_len += 2;
+
+            while crc_len < self.word_len {
+                self.write_buf[command_len + crc_len] = 0;
+                crc_len += 1;
+            }
         }
-
-        // Don't need to pad CRC as transfer does that automatically
-
-        let mut read_len = (1 + CHANNELS + 1) * self.word_len;
 
         // This will only happen for ADS131M03 with 24bit word len
         // This will avoid a panic, but I have no idea how that device will handle a padded transaction
         // TODO: Test this
-        if read_len % 2 == 1 {
-            read_len += 1;
-        }
+        let real_read_len = if read_len % 2 == 1 {
+            read_len + 1
+        } else {
+            read_len
+        };
 
         self.intf.transfer(
-            &self.write_buf[..bytes_written],
-            &mut self.read_buf[..read_len],
+            &self.write_buf[..command_len + crc_len],
+            &mut self.read_buf[..real_read_len + self.word_len],
         )?;
 
-        // Responses are always 2 bytes
-        let response: [u8; 2] = self.read_buf[..2].try_into().unwrap();
+        if check_resp_crc {
+            // CRCs are always 2 bytes
+            let resp_crc =
+                u16::from_be_bytes(self.read_buf[read_len..read_len + 2].try_into().unwrap());
+            let computed_crc = self.crc_table.checksum(&self.read_buf[..read_len]);
+            if resp_crc != computed_crc {
+                return Err(Error::ReceiveCrc {
+                    computed: computed_crc,
+                    received: resp_crc,
+                });
+            }
+        }
 
+        Ok(())
+    }
+
+    /// TODO: This should probably return a more rich type
+    /// Panics if `buf` is not `self.word_len` * `CHANNELS` in length
+    fn decode_samples(&self, buf: &[u8]) -> [[u8; 3]; CHANNELS] {
         let mut sample_data = [[0; 3]; CHANNELS];
         for channel in 0..CHANNELS {
-            let word_idx = (1 + channel) * self.word_len;
-            sample_data[channel] = match self.mode.word_length {
-                WordLength::Bits16 => [self.read_buf[word_idx], self.read_buf[word_idx + 1], 0],
-                WordLength::Bits24 | WordLength::Bits32Zero => [
-                    self.read_buf[word_idx],
-                    self.read_buf[word_idx + 1],
-                    self.read_buf[word_idx + 2],
-                ],
-                WordLength::Bits32Signed => [
-                    self.read_buf[word_idx + 1],
-                    self.read_buf[word_idx + 2],
-                    self.read_buf[word_idx + 3],
-                ],
+            let word_idx = channel * self.word_len;
+            match self.word_packing {
+                WordLength::Bits16 => sample_data[channel] = [buf[word_idx], buf[word_idx + 1], 0],
+                WordLength::Bits24 | WordLength::Bits32Zero => {
+                    sample_data[channel].copy_from_slice(&buf[word_idx..word_idx + 3])
+                }
+                WordLength::Bits32Signed => {
+                    sample_data[channel].copy_from_slice(&buf[word_idx + 1..word_idx + 4])
+                }
             };
         }
 
-        let resp_crc_idx = (1 + CHANNELS) * self.word_len;
-
-        // CRCs are always 2 bytes
-        let resp_crc = u16::from_be_bytes(
-            self.read_buf[resp_crc_idx..resp_crc_idx + 2]
-                .try_into()
-                .unwrap(),
-        );
-        let computed_crc = self.crc_table.checksum(&self.read_buf[..resp_crc_idx]);
-        if resp_crc != computed_crc {
-            return Err(Error::ReceiveCrc {
-                computed: computed_crc,
-                received: resp_crc,
-            });
-        }
-
-        Ok(Response {
-            response,
-            sample_data,
-        })
+        sample_data
     }
-}
-
-pub struct Response<const C: usize> {
-    response: [u8; 2],
-    sample_data: [[u8; 3]; C],
 }
 
 #[doc(hidden)]

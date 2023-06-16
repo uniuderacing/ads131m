@@ -857,39 +857,8 @@ impl Default for GainCal {
     }
 }
 
-/// Address to an ADC register
-pub struct RegisterCount(u8);
-
-impl RegisterCount {
-    /// Create a new register count
-    ///
-    /// If 0 < n <= 128 Some will be returned, otherwise None
-    pub const fn new(n: u8) -> Option<Self> {
-        if n > 0 && n <= 128 {
-            Some(Self(n))
-        } else {
-            None
-        }
-    }
-
-    /// Create a new register count, rounding to the closest valid count
-    pub const fn new_bounded(n: u8) -> Self {
-        if n == 0 {
-            Self(1)
-        } else if n <= 128 {
-            Self(n)
-        } else {
-            Self(128)
-        }
-    }
-
-    /// Get the count as a `u8`
-    pub const fn get(&self) -> u8 {
-        self.0
-    }
-}
-
 /// Command for the ADC
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Command {
     /// No operation
     Null,
@@ -903,18 +872,10 @@ pub enum Command {
     Lock,
     /// Unlock the interface after it has been locked
     Unlock,
-    /// Read a register at an address
-    ///
-    /// Reading multiple registers in one frame is not currently supported
-    ReadRegister(u6),
-    /// Write a register at an address
-    ///
-    /// Writing multiple registers in one frame is not currently supported
-    WriteRegister(u6),
 }
 
 impl Command {
-    /// Returns the command bytes for this `Command` instance
+    /// Returns the command bytes for this command
     ///
     /// Words are MSB first
     #[must_use]
@@ -926,14 +887,63 @@ impl Command {
             Self::Wakeup => [0x00, 0x33],
             Self::Lock => [0x05, 0x55],
             Self::Unlock => [0x06, 0x55],
-            Self::ReadRegister(address) => [
-                0xA0 | u8::from(*address) >> 1,
-                (u8::from(*address) & 0b1) << 7,
-            ],
-            Self::WriteRegister(address) => [
-                0x60 | u8::from(*address) >> 1,
-                (u8::from(*address) & 0b1) << 7,
-            ],
+        }
+    }
+}
+
+/// Response from the ADC
+///
+/// The responses to [Command::Null], and [Command::ReadRegister] return different
+/// types of data and are not covered here
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Response {
+    /// Nothing done. This is the response to [Command::Null]
+    Null(Status),
+    /// Device reset. This is the response to [Command::Reset]
+    Reset,
+    /// Device put into standby. This is the response to [Command::Standby]
+    Standby,
+    /// Device woken from standby. This is the response to [Command::Wakeup]
+    Wakeup,
+    /// Device SPI interface locked. This is the response to [Command::Lock]
+    Lock,
+    /// Device SPI interface unlocked. This is the response to [Command::Unlock]
+    Unlock,
+}
+
+impl Response {
+    /// Try to decode a response from some bytes, returning [None] if the bytes do not match any response type
+    #[must_use]
+    pub fn try_from_be_bytes(bytes: [u8; 2]) -> Option<Self> {
+        // Response bits:
+        // 1111 1111 0010 0100: Reset
+        // 0000 0000 0010 0010: Standby
+        // 0000 0000 0011 0011: Wakeup
+        // 0000 0101 0101 0101: Lock
+        // 0000 0110 0101 0101: Unlock
+        //
+        // Status register bits, assuming the RESET bit is always set:
+        // xxxx x1xx 0000 xxxx
+        //
+        // If we only look at the bits that are fixed in the Status register
+        // we can see that it has a unique pattern that we can use
+        // to distinguish it from other responses
+        // ____ _1__ 0010 ____: Reset
+        // ____ _0__ 0010 ____: Standby
+        // ____ _0__ 0011 ____: Wakeup
+        // ____ _1__ 0101 ____: Lock
+        // ____ _1__ 0101 ____: Unlock
+        // ____ _1__ 0000 ____: Status
+        match bytes {
+            [0xFF, 0x24] => Some(Self::Reset),
+            [0x00, 0x22] => Some(Self::Standby),
+            [0x00, 0x33] => Some(Self::Wakeup),
+            [0x05, 0x55] => Some(Self::Lock),
+            [0x06, 0x55] => Some(Self::Unlock),
+            b if (b[0] & 0x4) != 0 && (b[1] & 0xF0) == 0 => {
+                Some(Self::Null(Status::from_be_bytes(b)))
+            }
+            _ => None,
         }
     }
 }
@@ -1182,29 +1192,70 @@ mod tests {
         assert_eq!(Command::Wakeup.to_be_bytes(), [0b0000_0000, 0b0011_0011]);
         assert_eq!(Command::Lock.to_be_bytes(), [0b0000_0101, 0b0101_0101]);
         assert_eq!(Command::Unlock.to_be_bytes(), [0b0000_0110, 0b0101_0101]);
+    }
+
+    #[test]
+    fn response_decode() {
         assert_eq!(
-            Command::ReadRegister(u6::new(0)).to_be_bytes(),
-            [0b1010_0000, 0b0000_0000]
+            Response::try_from_be_bytes([0b1111_1111, 0b0010_0100]),
+            Some(Response::Reset)
         );
         assert_eq!(
-            Command::ReadRegister(u6::new(5)).to_be_bytes(),
-            [0b1010_0010, 0b1000_0000]
+            Response::try_from_be_bytes([0b0000_0000, 0b0010_0010]),
+            Some(Response::Standby)
         );
         assert_eq!(
-            Command::ReadRegister(u6::new(63)).to_be_bytes(),
-            [0b1011_1111, 0b1000_0000]
+            Response::try_from_be_bytes([0b0000_0000, 0b0011_0011]),
+            Some(Response::Wakeup)
         );
         assert_eq!(
-            Command::WriteRegister(u6::new(0)).to_be_bytes(),
-            [0b0110_0000, 0b0000_0000]
+            Response::try_from_be_bytes([0b0000_0101, 0b0101_0101]),
+            Some(Response::Lock)
         );
         assert_eq!(
-            Command::WriteRegister(u6::new(5)).to_be_bytes(),
-            [0b0110_0010, 0b1000_0000]
+            Response::try_from_be_bytes([0b0000_0110, 0b0101_0101]),
+            Some(Response::Unlock)
         );
         assert_eq!(
-            Command::WriteRegister(u6::new(63)).to_be_bytes(),
-            [0b0111_1111, 0b1000_0000]
+            Response::try_from_be_bytes([0b0000_0101, 0b0000_0000]),
+            Some(Response::Null(Status {
+                lock: false,
+                resync: false,
+                reg_map_crc_err: false,
+                spi_crc_err: false,
+                crc_type: CrcType::Ccitt,
+                reset: true,
+                word_length: WordLength::Bits24,
+                drdy0: false,
+                drdy1: false,
+                drdy2: false,
+                drdy3: false
+            }))
+        );
+        assert_eq!(
+            Response::try_from_be_bytes([0b1111_1111, 0b0000_1111]),
+            Some(Response::Null(Status {
+                lock: true,
+                resync: true,
+                reg_map_crc_err: true,
+                spi_crc_err: true,
+                crc_type: CrcType::Ansi,
+                reset: true,
+                word_length: WordLength::Bits32Signed,
+                drdy0: true,
+                drdy1: true,
+                drdy2: true,
+                drdy3: true
+            }))
+        );
+        assert_eq!(
+            Response::try_from_be_bytes([0b1111_1111, 0b0001_1111]),
+            None
+        );
+
+        assert_eq!(
+            Response::try_from_be_bytes([0b0000_0000, 0b0010_0000]),
+            None
         );
     }
 }

@@ -1,5 +1,7 @@
 //! The errors for this crate
 
+use crate::types::Response;
+
 /// The main error type
 pub enum Error<S> {
     /// Error from the inner SPI interface
@@ -11,6 +13,8 @@ pub enum Error<S> {
         /// The received CRC checksum
         received: u16,
     },
+    /// An unexpected message was received from the device
+    UnexpectedResponse(Option<Response>),
 }
 
 impl<S> From<S> for Error<S> {
