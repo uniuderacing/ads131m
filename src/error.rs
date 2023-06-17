@@ -1,7 +1,5 @@
 //! The errors for this crate
 
-use crate::types::Response;
-
 /// The main error type
 pub enum Error<S> {
     /// Error from the inner SPI interface
@@ -14,7 +12,7 @@ pub enum Error<S> {
         received: u16,
     },
     /// An unexpected message was received from the device
-    UnexpectedResponse(Option<Response>),
+    UnexpectedResponse(Option<[u8; 2]>),
 }
 
 impl<S> From<S> for Error<S> {

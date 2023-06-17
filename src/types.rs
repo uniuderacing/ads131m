@@ -8,7 +8,7 @@
 
 use enum_iterator::{self, Sequence};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
-use ux::{u10, u24, u4, u6};
+use ux::{u10, u24, u4};
 
 macro_rules! is_bit_set {
     ($word:expr, $bit:literal) => {

@@ -11,7 +11,7 @@ use crate::types::{
 use crate::Error;
 use concat_idents::concat_idents;
 use crc::{Crc, CRC_16_CMS, CRC_16_IBM_3740};
-use ux::u6;
+use static_assertions::const_assert_eq;
 
 // Since no const-generic math, we have to use the max possible buffer size
 // 32-bit words (4 bytes) * ( 1 response word + 8 channel data + 1 CRC word)
@@ -34,7 +34,8 @@ macro_rules! impl_channel {
                     "_CFG` register"
                 )]
                 fn get_channel_config(&mut self) -> Result<ChannelConfig, Error<E>> {
-                    let bytes = self.read_reg(registers::CHANNEL_CONFIG_ADDRS[$channel_num])?;
+                    let mut bytes = [0u8; 2];
+                    self.read_regs(registers::CHANNEL_CONFIG_ADDRS[$channel_num], &mut bytes)?;
                     Ok(ChannelConfig::from_be_bytes(bytes))
                 }
             });
@@ -46,7 +47,7 @@ macro_rules! impl_channel {
                     "_CFG` register"
                 )]
                 fn set_channel_config(&mut self, config: ChannelConfig) -> Result<(), Error<E>> {
-                    self.write_reg(registers::CHANNEL_CONFIG_ADDRS[$channel_num], config.to_be_bytes())
+                    self.write_all_regs(registers::CHANNEL_CONFIG_ADDRS[$channel_num], &mut config.to_be_bytes())
                 }
             });
 
@@ -59,9 +60,17 @@ macro_rules! impl_channel {
                     "_OCAL_LSB` registers"
                 )]
                 fn get_channel_offset_cal(&mut self) -> Result<OffsetCal, Error<E>> {
-                    let [b0, b1] = self.read_reg(registers::CHANNEL_OCAL_MSB_ADDRS[$channel_num])?;
-                    let [b2, b3] = self.read_reg(registers::CHANNEL_OCAL_LSB_ADDRS[$channel_num])?;
-                    Ok(OffsetCal::from_be_bytes([b0, b1, b2, b3]))
+                    // Ensure registers are contiguous
+                    const_assert_eq!(
+                        registers::CHANNEL_OCAL_MSB_ADDRS[$channel_num] + 1,
+                        registers::CHANNEL_OCAL_LSB_ADDRS[$channel_num]
+                    );
+                    // This macro doesn't "use" these variables, so we need to fake it
+                    let _ = registers::CHANNEL_OCAL_LSB_ADDRS[$channel_num];
+
+                    let mut bytes = [0u8; 4];
+                    self.read_regs(registers::CHANNEL_OCAL_MSB_ADDRS[$channel_num], &mut bytes)?;
+                    Ok(OffsetCal::from_be_bytes(bytes))
                 }
             });
 
@@ -74,9 +83,15 @@ macro_rules! impl_channel {
                     "_OCAL_LSB` registers"
                 )]
                 fn set_channel_offset_cal(&mut self, offset_cal: OffsetCal) -> Result<(), Error<E>> {
-                    let [b0, b1, b2, b3] = offset_cal.to_be_bytes();
-                    self.write_reg(registers::CHANNEL_OCAL_MSB_ADDRS[$channel_num], [b0, b1])?;
-                    self.write_reg(registers::CHANNEL_OCAL_LSB_ADDRS[$channel_num], [b2, b3])
+                    // Ensure registers are contiguous
+                    const_assert_eq!(
+                        registers::CHANNEL_OCAL_MSB_ADDRS[$channel_num] + 1,
+                        registers::CHANNEL_OCAL_LSB_ADDRS[$channel_num]
+                    );
+                    // This macro doesn't "use" these variables, so we need to fake it
+                    let _ = registers::CHANNEL_OCAL_LSB_ADDRS[$channel_num];
+
+                    self.write_all_regs(registers::CHANNEL_OCAL_MSB_ADDRS[$channel_num], &mut offset_cal.to_be_bytes())
                 }
             });
 
@@ -89,9 +104,17 @@ macro_rules! impl_channel {
                     "_GCAL_LSB` registers"
                 )]
                 fn get_channel_gain_cal(&mut self) -> Result<GainCal, Error<E>> {
-                    let [b0, b1] = self.read_reg(registers::CHANNEL_GCAL_MSB_ADDRS[$channel_num])?;
-                    let [b2, b3] = self.read_reg(registers::CHANNEL_GCAL_LSB_ADDRS[$channel_num])?;
-                    Ok(GainCal::from_be_bytes([b0, b1, b2, b3]))
+                    // Ensure registers are contiguous
+                    const_assert_eq!(
+                        registers::CHANNEL_GCAL_MSB_ADDRS[$channel_num] + 1,
+                        registers::CHANNEL_GCAL_LSB_ADDRS[$channel_num]
+                    );
+                    // This macro doesn't "use" these variables, so we need to fake it
+                    let _ = registers::CHANNEL_GCAL_LSB_ADDRS[$channel_num];
+
+                    let mut bytes = [0u8; 4];
+                    self.read_regs(registers::CHANNEL_GCAL_MSB_ADDRS[$channel_num], &mut bytes)?;
+                    Ok(GainCal::from_be_bytes(bytes))
                 }
             });
 
@@ -104,9 +127,15 @@ macro_rules! impl_channel {
                     "_GCAL_LSB` registers"
                 )]
                 fn set_channel_gain_cal(&mut self, gain_cal: GainCal) -> Result<(), Error<E>> {
-                    let [b0, b1, b2, b3] = gain_cal.to_be_bytes();
-                    self.write_reg(registers::CHANNEL_GCAL_MSB_ADDRS[$channel_num], [b0, b1])?;
-                    self.write_reg(registers::CHANNEL_GCAL_LSB_ADDRS[$channel_num], [b2, b3])
+                    // Ensure registers are contiguous
+                    const_assert_eq!(
+                        registers::CHANNEL_GCAL_MSB_ADDRS[$channel_num] + 1,
+                        registers::CHANNEL_GCAL_LSB_ADDRS[$channel_num]
+                    );
+                    // This macro doesn't "use" these variables, so we need to fake it
+                    let _ = registers::CHANNEL_GCAL_LSB_ADDRS[$channel_num];
+
+                    self.write_all_regs(registers::CHANNEL_GCAL_MSB_ADDRS[$channel_num], &mut gain_cal.to_be_bytes())
                 }
             });
         }
@@ -206,9 +235,9 @@ where
         // TODO: Do something with these samples
         let (_, samples_1) = self.send_simple_command(Command::Standby)?;
         let (resp, samples_2) = self.send_simple_command(Command::Null)?;
-        match Response::try_from_be_bytes(resp) {
+        match Response::try_from_be_bytes(resp.clone()) {
             Some(Response::Standby) => Ok(()),
-            e => Err(Error::UnexpectedResponse(e)),
+            _ => Err(Error::UnexpectedResponse(Some(resp))),
         }
     }
 
@@ -218,9 +247,9 @@ where
         // TODO: Do something with these samples
         let (_, samples_1) = self.send_simple_command(Command::Wakeup)?;
         let (resp, samples_2) = self.send_simple_command(Command::Null)?;
-        match Response::try_from_be_bytes(resp) {
+        match Response::try_from_be_bytes(resp.clone()) {
             Some(Response::Wakeup) => Ok(()),
-            e => Err(Error::UnexpectedResponse(e)),
+            _ => Err(Error::UnexpectedResponse(Some(resp))),
         }
     }
 
@@ -229,9 +258,9 @@ where
         // TODO: Do something with these samples
         let (_, samples_1) = self.send_simple_command(Command::Lock)?;
         let (resp, samples_2) = self.send_simple_command(Command::Null)?;
-        match Response::try_from_be_bytes(resp) {
+        match Response::try_from_be_bytes(resp.clone()) {
             Some(Response::Lock) => Ok(()),
-            e => Err(Error::UnexpectedResponse(e)),
+            _ => Err(Error::UnexpectedResponse(Some(resp))),
         }
     }
 
@@ -240,21 +269,23 @@ where
         // TODO: Do something with these samples
         let (_, samples_1) = self.send_simple_command(Command::Unlock)?;
         let (resp, samples_2) = self.send_simple_command(Command::Null)?;
-        match Response::try_from_be_bytes(resp) {
+        match Response::try_from_be_bytes(resp.clone()) {
             Some(Response::Unlock) => Ok(()),
-            e => Err(Error::UnexpectedResponse(e)),
+            _ => Err(Error::UnexpectedResponse(Some(resp))),
         }
     }
 
     /// Read the `ID` register
     pub fn get_id(&mut self) -> Result<Id, Error<IntfError>> {
-        let bytes = self.read_reg(registers::ID_ADDR)?;
+        let mut bytes = [0u8; 2];
+        self.read_regs(registers::ID_ADDR, &mut bytes)?;
         Ok(Id::from_be_bytes(bytes))
     }
 
     /// Read the `STATUS` register
     pub fn get_status(&mut self) -> Result<Status, Error<IntfError>> {
-        let bytes = self.read_reg(registers::STATUS_ADDR)?;
+        let mut bytes = [0u8; 2];
+        self.read_regs(registers::STATUS_ADDR, &mut bytes)?;
         Ok(Status::from_be_bytes(bytes))
     }
 
@@ -262,7 +293,8 @@ where
     ///
     /// This also updates the internal cache of the device mode, which can change how the driver communicates
     pub fn get_mode(&mut self) -> Result<Mode, Error<IntfError>> {
-        let bytes = self.read_reg(registers::MODE_ADDR)?;
+        let mut bytes = [0u8; 2];
+        self.read_regs(registers::MODE_ADDR, &mut bytes)?;
         let mode = Mode::from_be_bytes(bytes);
 
         self.process_new_mode(mode.clone());
@@ -273,7 +305,7 @@ where
     ///
     /// This also updates the internal cache of the device mode, which can change how the driver communicates
     pub fn set_mode(&mut self, mode: Mode) -> Result<(), Error<IntfError>> {
-        self.write_reg(registers::MODE_ADDR, mode.to_be_bytes())?;
+        self.write_all_regs(registers::MODE_ADDR, &mode.to_be_bytes())?;
 
         self.process_new_mode(mode);
         Ok(())
@@ -281,49 +313,60 @@ where
 
     /// Read the `CLOCK` register
     pub fn get_clock(&mut self) -> Result<Clock, Error<IntfError>> {
-        let bytes = self.read_reg(registers::CLOCK_ADDR)?;
+        let mut bytes = [0u8; 2];
+        self.read_regs(registers::CLOCK_ADDR, &mut bytes)?;
         Ok(Clock::from_be_bytes(bytes))
     }
 
     /// Write to the `CLOCK` register
     pub fn set_clock(&mut self, clock: Clock) -> Result<(), Error<IntfError>> {
-        self.write_reg(registers::CLOCK_ADDR, clock.to_be_bytes())
+        self.write_all_regs(registers::CLOCK_ADDR, &clock.to_be_bytes())
     }
 
     /// Read the GAIN1 register
     pub fn get_gain(&mut self) -> Result<Gain, Error<IntfError>> {
-        let bytes = self.read_reg(registers::GAIN_ADDR)?;
+        let mut bytes = [0u8; 2];
+        self.read_regs(registers::GAIN_ADDR, &mut bytes)?;
         Ok(Gain::from_be_bytes(bytes))
     }
 
     /// Write to the `GAIN1` register
     pub fn set_gain(&mut self, gain: Gain) -> Result<(), Error<IntfError>> {
-        self.write_reg(registers::GAIN_ADDR, gain.to_be_bytes())
+        self.write_all_regs(registers::GAIN_ADDR, &gain.to_be_bytes())
     }
 
     /// Read the `CFG` register
     pub fn get_config(&mut self) -> Result<Config, Error<IntfError>> {
-        let bytes = self.read_reg(registers::CFG_ADDR)?;
+        let mut bytes = [0u8; 2];
+        self.read_regs(registers::CFG_ADDR, &mut bytes)?;
         Ok(Config::from_be_bytes(bytes))
     }
 
     /// Write to the `CFG` register
     pub fn set_config(&mut self, gain: Config) -> Result<(), Error<IntfError>> {
-        self.write_reg(registers::CFG_ADDR, gain.to_be_bytes())
+        self.write_all_regs(registers::CFG_ADDR, &gain.to_be_bytes())
     }
 
     /// Read the `THRSHLD_MSB` and `THRSHLD_LSB` registers
     pub fn get_threshold(&mut self) -> Result<Threshold, Error<IntfError>> {
-        let [b0, b1] = self.read_reg(registers::THRSHLD_MSB_ADDR)?;
-        let [b2, b3] = self.read_reg(registers::THRSHLD_LSB_ADDR)?;
-        Ok(Threshold::from_be_bytes([b0, b1, b2, b3]))
+        // Ensure registers are contiguous
+        const_assert_eq!(registers::THRSHLD_MSB_ADDR + 1, registers::THRSHLD_LSB_ADDR);
+        // This macro doesn't "use" these variables, so we need to fake it
+        let _ = registers::THRSHLD_LSB_ADDR;
+
+        let mut bytes = [0u8; 4];
+        self.read_regs(registers::THRSHLD_MSB_ADDR, &mut bytes)?;
+        Ok(Threshold::from_be_bytes(bytes))
     }
 
     /// Write to the `THRSHLD_MSB` and `THRSHLD_LSB` registers
     pub fn set_threshold(&mut self, threshold: Threshold) -> Result<(), Error<IntfError>> {
-        let [b0, b1, b2, b3] = threshold.to_be_bytes();
-        self.write_reg(registers::THRSHLD_MSB_ADDR, [b0, b1])?;
-        self.write_reg(registers::THRSHLD_LSB_ADDR, [b2, b3])
+        // Ensure registers are contiguous
+        const_assert_eq!(registers::THRSHLD_MSB_ADDR + 1, registers::THRSHLD_LSB_ADDR);
+        // This macro doesn't "use" these variables, so we need to fake it
+        let _ = registers::THRSHLD_LSB_ADDR;
+
+        self.write_all_regs(registers::THRSHLD_MSB_ADDR, &mut threshold.to_be_bytes())
     }
 
     fn new(intf: Intf, mode: Mode) -> Result<Self, Error<IntfError>> {
@@ -376,13 +419,13 @@ where
             bytes_written += 1;
         }
 
-        let read_len = (1 + CHANNELS) * self.word_len;
+        let read_len = self.word_len * (1 + CHANNELS);
         self.transfer_frame(bytes_written, read_len, command != Command::Reset)?;
 
         // Responses are always 2 bytes
         let response: [u8; 2] = self.read_buf[..2].try_into().unwrap();
         let sample_data =
-            self.decode_samples(&self.read_buf[self.word_len..self.word_len * (CHANNELS + 1)]);
+            self.decode_samples(&self.read_buf[self.word_len * 1..self.word_len * (CHANNELS + 1)]);
 
         Ok((response, sample_data))
     }
@@ -462,22 +505,173 @@ where
 }
 
 #[doc(hidden)]
-pub trait RegisterAccess<E> {
-    fn read_reg(&mut self, address: u6) -> Result<[u8; 2], Error<E>>;
-    fn write_reg(&mut self, address: u6, bytes: [u8; 2]) -> Result<(), Error<E>>;
+pub trait RegisterAccess<IntfError> {
+    /// Read some device registers
+    /// Currently only reading 1 or 2 registers is supported
+    /// Panics if `buf` is not 2 or 4 in length
+    fn read_regs(&mut self, address: u8, buf: &mut [u8]) -> Result<(), Error<IntfError>>;
+    /// Write some device registers
+    /// Currently only writing 1 or 2 registers is supported
+    /// Returns the number of registers actually written
+    /// Panics if `buf` is not 2 or 4 in length
+    fn write_regs(&mut self, address: u8, buf: &[u8]) -> Result<usize, Error<IntfError>>;
+    /// Write the entire buf to device registers
+    /// Currently only writing 1 or 2 registers is supported
+    /// Panics if `buf` is not 2 or 4 in length
+    fn write_all_regs(&mut self, address: u8, buf: &[u8]) -> Result<(), Error<IntfError>>;
 }
 
-impl<I, E, W, const C: usize> RegisterAccess<E> for Ads131m<I, E, W, C>
+impl<Intf, IntfError, IntfWord, const CHANNELS: usize> RegisterAccess<IntfError>
+    for Ads131m<Intf, IntfError, IntfWord, CHANNELS>
 where
-    I: Interface<E, W>,
-    W: Copy,
+    Intf: Interface<IntfError, IntfWord>,
+    IntfWord: Copy,
 {
-    fn read_reg(&mut self, address: u6) -> Result<[u8; 2], Error<E>> {
-        unimplemented!()
+    fn read_regs(&mut self, address: u8, buf: &mut [u8]) -> Result<(), Error<IntfError>> {
+        let reg_count = buf.len() / 2;
+        assert!(reg_count > 0 && reg_count < 3);
+
+        let mut bytes_written;
+
+        // Send command
+        let request_bytes = [
+            0xA0 | u8::from(address) >> 1,
+            (u8::from(address) & 0b1) << 7 | ((reg_count - 1) & 0x7F) as u8,
+        ];
+        self.write_buf[0..2].copy_from_slice(&request_bytes);
+        bytes_written = 2;
+
+        while bytes_written < self.word_len {
+            self.write_buf[bytes_written] = 0;
+            bytes_written += 1;
+        }
+
+        let read_len = self.word_len * (1 + CHANNELS);
+        self.transfer_frame(bytes_written, read_len, true)?;
+
+        // Ignore response
+        // TODO: Do something with these samples
+        let samples_1 =
+            self.decode_samples(&self.read_buf[self.word_len * 1..self.word_len * (CHANNELS + 1)]);
+
+        // Fetch data
+        self.write_buf[0..2].copy_from_slice(&Command::Null.to_be_bytes());
+        bytes_written = 2;
+
+        while bytes_written < self.word_len {
+            self.write_buf[bytes_written] = 0;
+            bytes_written += 1;
+        }
+
+        let read_len = match reg_count {
+            1 => self.word_len * (1 + CHANNELS),
+            n => self.word_len * (n / 2),
+        };
+
+        self.transfer_frame(bytes_written, read_len, true)?;
+
+        match reg_count {
+            1 => {
+                buf[0..2].copy_from_slice(&self.read_buf[0..2]);
+                let samples_2 = self.decode_samples(
+                    &self.read_buf[self.word_len * 1..self.word_len * (CHANNELS + 1)],
+                );
+            }
+            n => {
+                if self.read_buf[0] != request_bytes[0] | 0x40
+                    || self.read_buf[1] != request_bytes[1]
+                {
+                    return Err(Error::UnexpectedResponse(Some([
+                        self.read_buf[0],
+                        self.read_buf[1],
+                    ])));
+                }
+
+                for i in 0..n {
+                    buf[i * 2..(i + 1) * 2].copy_from_slice(
+                        &self.read_buf[self.word_len * i..self.word_len * (i + 1)],
+                    );
+                    // No samples returned
+                }
+            }
+        }
+
+        Ok(())
     }
 
-    fn write_reg(&mut self, address: u6, bytes: [u8; 2]) -> Result<(), Error<E>> {
-        unimplemented!()
+    // Returns the number of registers actually written
+    fn write_regs(&mut self, address: u8, buf: &[u8]) -> Result<usize, Error<IntfError>> {
+        let reg_count = buf.len() / 2;
+        assert!(reg_count > 0 && reg_count < 3);
+
+        let mut bytes_written;
+
+        // Send command
+        let request_bytes = [
+            0x60 | u8::from(address) >> 1,
+            (u8::from(address) & 0b1) << 7 | ((reg_count - 1) & 0x7F) as u8,
+        ];
+        self.write_buf[0..2].copy_from_slice(&request_bytes);
+        bytes_written = 2;
+
+        while bytes_written < self.word_len {
+            self.write_buf[bytes_written] = 0;
+            bytes_written += 1;
+        }
+
+        for i in 0..reg_count {
+            self.write_buf[bytes_written..bytes_written + 2]
+                .copy_from_slice(&buf[i * 2..(i + 1) * 2]);
+            bytes_written += 2;
+
+            while bytes_written < (self.word_len * (1 + i + 1)) {
+                self.write_buf[bytes_written] = 0;
+                bytes_written += 1;
+            }
+        }
+
+        let read_len = self.word_len * (1 + CHANNELS);
+        self.transfer_frame(bytes_written, read_len, true)?;
+
+        // Ignore response
+        // TODO: Do something with these samples
+        let samples_1 =
+            self.decode_samples(&self.read_buf[self.word_len * 1..self.word_len * (CHANNELS + 1)]);
+
+        // Fetch data
+        self.write_buf[0..2].copy_from_slice(&Command::Null.to_be_bytes());
+        bytes_written = 2;
+
+        while bytes_written < self.word_len {
+            self.write_buf[bytes_written] = 0;
+            bytes_written += 1;
+        }
+
+        let read_len = (1 + CHANNELS) * self.word_len;
+        self.transfer_frame(bytes_written, read_len, true)?;
+
+        let resp = &self.read_buf[0..2];
+        // TODO: Do something with these samples
+        let samples_2 =
+            self.decode_samples(&self.read_buf[self.word_len..self.word_len * (CHANNELS + 1)]);
+
+        if resp[0] != 0x40 | u8::from(address) >> 1 || resp[1] & 0x80 != u8::from(address) << 7 {
+            return Err(Error::UnexpectedResponse(Some(resp.try_into().unwrap())));
+        }
+
+        Ok(usize::from(resp[1] & 0x7F))
+    }
+
+    fn write_all_regs(&mut self, address: u8, buf: &[u8]) -> Result<(), Error<IntfError>> {
+        let reg_count = buf.len() / 2;
+        assert!(reg_count > 0 && reg_count < 3);
+
+        let mut regs_written = 0;
+        while regs_written < reg_count {
+            regs_written += self.write_regs(address, &buf[regs_written * 2..])?;
+        }
+
+        Ok(())
     }
 }
 
