@@ -1,11 +1,5 @@
 //! Types for configuring an ADS131M registers
 
-#![allow(
-    clippy::cast_possible_truncation,
-    clippy::missing_panics_doc,
-    clippy::struct_excessive_bools
-)]
-
 use enum_iterator::{self, Sequence};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use ux::{u10, u24, u4};
@@ -411,6 +405,7 @@ impl Id {
 
 /// Device `STATUS` register
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct Status {
     /// Whether the SPI interface is locked
     pub lock: bool,
@@ -450,6 +445,7 @@ pub struct Status {
 impl Status {
     /// Decode a `Status` from it's register bytes
     #[must_use]
+    #[allow(clippy::missing_panics_doc)]
     pub fn from_be_bytes(bytes: [u8; 2]) -> Self {
         Self {
             lock: is_bit_set!(bytes[0], 7),
@@ -487,6 +483,7 @@ impl Default for Status {
 
 /// Device `MODE` register
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct Mode {
     /// Whether register map CRC checking is enabled
     pub reg_crc_enable: bool,
@@ -505,7 +502,7 @@ pub struct Mode {
     pub word_length: WordLength,
 
     /// SPI timeout enable
-    pub spi_timeout: bool,
+    pub spi_timeout_enable: bool,
 
     /// DRDY pin signal source selection
     pub drdy_source: DrdySource,
@@ -520,6 +517,7 @@ pub struct Mode {
 impl Mode {
     /// Decode a `Mode` from it's register bytes
     #[must_use]
+    #[allow(clippy::missing_panics_doc)]
     pub fn from_be_bytes(bytes: [u8; 2]) -> Self {
         Self {
             reg_crc_enable: is_bit_set!(bytes[0], 5),
@@ -527,7 +525,7 @@ impl Mode {
             crc_type: CrcType::try_from((bytes[0] >> 3) & 0b1).unwrap(),
             reset: is_bit_set!(bytes[0], 2),
             word_length: WordLength::try_from(bytes[0] & 0b11).unwrap(),
-            spi_timeout: is_bit_set!(bytes[1], 4),
+            spi_timeout_enable: is_bit_set!(bytes[1], 4),
             drdy_source: DrdySource::try_from((bytes[1] >> 2) & 0b11).unwrap(),
             drdy_not_ready_state: DrdyNotReadyState::try_from((bytes[1] >> 1) & 0b1).unwrap(),
             drdy_ready_state: DrdyReadyState::try_from(bytes[1] & 0b1).unwrap(),
@@ -543,7 +541,7 @@ impl Mode {
                 | u8::from(self.crc_type) << 3
                 | u8::from(self.reset) << 2
                 | u8::from(self.word_length),
-            u8::from(self.spi_timeout) << 4
+            u8::from(self.spi_timeout_enable) << 4
                 | u8::from(self.drdy_source) << 2
                 | u8::from(self.drdy_not_ready_state) << 1
                 | u8::from(self.drdy_ready_state),
@@ -559,7 +557,7 @@ impl Default for Mode {
             crc_type: CrcType::default(),
             reset: true,
             word_length: WordLength::default(),
-            spi_timeout: true,
+            spi_timeout_enable: true,
             drdy_source: DrdySource::default(),
             drdy_not_ready_state: DrdyNotReadyState::default(),
             drdy_ready_state: DrdyReadyState::default(),
@@ -569,6 +567,7 @@ impl Default for Mode {
 
 /// Device `CLOCK` register
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct Clock {
     /// Channel 0 ADC enable
     pub channel0_en: bool,
@@ -592,6 +591,7 @@ pub struct Clock {
 impl Clock {
     /// Decode a `Clock` from it's register bytes
     #[must_use]
+    #[allow(clippy::missing_panics_doc)]
     pub fn from_be_bytes(bytes: [u8; 2]) -> Self {
         Self {
             channel0_en: is_bit_set!(bytes[0], 0),
@@ -648,6 +648,7 @@ pub struct Gain {
 impl Gain {
     /// Decode a `Gain` from it's register bytes
     #[must_use]
+    #[allow(clippy::missing_panics_doc)]
     pub fn from_be_bytes(bytes: [u8; 2]) -> Self {
         Self {
             pga_gain2: PgaGain::try_from(bytes[0] & 0b111).unwrap(),
@@ -693,6 +694,7 @@ pub struct Config {
 impl Config {
     /// Decode a `Config` from it's register bytes
     #[must_use]
+    #[allow(clippy::missing_panics_doc)]
     pub fn from_be_bytes(bytes: [u8; 2]) -> Self {
         Self {
             global_chop_delay: GlobalChopDelay::try_from((bytes[0] >> 1) & 0b1111).unwrap(),
@@ -733,6 +735,7 @@ impl Threshold {
     ///
     /// Words must be MSB first
     #[must_use]
+    #[allow(clippy::missing_panics_doc)]
     pub fn from_be_bytes(bytes: [u8; 4]) -> Self {
         Self {
             current_detect_threshold: u24::from(bytes[0]) << 16
@@ -746,6 +749,7 @@ impl Threshold {
     ///
     /// Words are MSB first
     #[must_use]
+    #[allow(clippy::cast_possible_truncation)]
     pub fn to_be_bytes(&self) -> [u8; 4] {
         let threshold = u32::from(self.current_detect_threshold);
 
@@ -774,6 +778,7 @@ pub struct ChannelConfig {
 impl ChannelConfig {
     /// Decode a `ChannelConfig` from it's register bytes
     #[must_use]
+    #[allow(clippy::missing_panics_doc)]
     pub fn from_be_bytes(bytes: [u8; 2]) -> Self {
         Self {
             phase: u10::from(bytes[0]) << 2 | u10::from(bytes[1] >> 6),
@@ -784,6 +789,7 @@ impl ChannelConfig {
 
     /// Returns the register bytes for this `ChannelConfig`
     #[must_use]
+    #[allow(clippy::cast_possible_truncation)]
     pub fn to_be_bytes(&self) -> [u8; 2] {
         let phase = u16::from(self.phase);
         [
@@ -815,6 +821,7 @@ impl OffsetCal {
     ///
     /// Words are MSB first
     #[must_use]
+    #[allow(clippy::cast_possible_truncation)]
     pub fn to_be_bytes(&self) -> [u8; 4] {
         let offset = u32::from(self.offset);
         [(offset >> 16) as u8, (offset >> 8) as u8, offset as u8, 0]
@@ -843,6 +850,7 @@ impl GainCal {
     ///
     /// Words are MSB first
     #[must_use]
+    #[allow(clippy::cast_possible_truncation)]
     pub fn to_be_bytes(&self) -> [u8; 4] {
         let gain = u32::from(self.gain);
         [(gain >> 16) as u8, (gain >> 8) as u8, gain as u8, 0]
@@ -879,7 +887,7 @@ impl Command {
     ///
     /// Words are MSB first
     #[must_use]
-    pub fn to_be_bytes(&self) -> [u8; 2] {
+    pub const fn to_be_bytes(&self) -> [u8; 2] {
         match self {
             Self::Null => [0x00, 0x00],
             Self::Reset => [0x00, 0x11],
@@ -892,9 +900,6 @@ impl Command {
 }
 
 /// Response from the ADC
-///
-/// The responses to [Command::Null], and [Command::ReadRegister] return different
-/// types of data and are not covered here
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Response {
     /// Nothing done. This is the response to [Command::Null]
@@ -966,19 +971,19 @@ mod tests {
                 Id {
                     channel_count: u4::new(count)
                 }
-            )
+            );
         }
     }
 
     #[test]
     fn status_default() {
-        assert_eq!(Status::from_be_bytes([0x05, 0x00]), Status::default())
+        assert_eq!(Status::from_be_bytes([0x05, 0x00]), Status::default());
     }
 
     #[test]
     fn mode_default() {
         assert_eq!(Mode::default().to_be_bytes(), [0x05, 0x10]);
-        assert_eq!(Mode::from_be_bytes([0x05, 0x10]), Mode::default())
+        assert_eq!(Mode::from_be_bytes([0x05, 0x10]), Mode::default());
     }
 
     #[test]
@@ -995,13 +1000,13 @@ mod tests {
                                     crc_type,
                                     reset: bools,
                                     word_length,
-                                    spi_timeout: bools,
+                                    spi_timeout_enable: bools,
                                     drdy_source,
                                     drdy_not_ready_state,
                                     drdy_ready_state,
                                 };
 
-                                assert_eq!(mode, Mode::from_be_bytes(mode.to_be_bytes()))
+                                assert_eq!(mode, Mode::from_be_bytes(mode.to_be_bytes()));
                             }
                         }
                     }
@@ -1013,7 +1018,7 @@ mod tests {
     #[test]
     fn clock_default() {
         assert_eq!(Clock::default().to_be_bytes(), [0x0F, 0x0E]);
-        assert_eq!(Clock::from_be_bytes([0x0F, 0x0E]), Clock::default())
+        assert_eq!(Clock::from_be_bytes([0x0F, 0x0E]), Clock::default());
     }
 
     #[test]
@@ -1030,7 +1035,7 @@ mod tests {
                         power_mode,
                     };
 
-                    assert_eq!(clock, Clock::from_be_bytes(clock.to_be_bytes()))
+                    assert_eq!(clock, Clock::from_be_bytes(clock.to_be_bytes()));
                 }
             }
         }
@@ -1039,7 +1044,7 @@ mod tests {
     #[test]
     fn gain_default() {
         assert_eq!(Gain::default().to_be_bytes(), [0x00, 0x00]);
-        assert_eq!(Gain::from_be_bytes([0x00, 0x00]), Gain::default())
+        assert_eq!(Gain::from_be_bytes([0x00, 0x00]), Gain::default());
     }
 
     #[test]
@@ -1052,14 +1057,14 @@ mod tests {
                 pga_gain3: gains,
             };
 
-            assert_eq!(gain, Gain::from_be_bytes(gain.to_be_bytes()))
+            assert_eq!(gain, Gain::from_be_bytes(gain.to_be_bytes()));
         }
     }
 
     #[test]
     fn config_default() {
         assert_eq!(Config::default().to_be_bytes(), [0x06, 0x00]);
-        assert_eq!(Config::from_be_bytes([0x06, 0x00]), Config::default())
+        assert_eq!(Config::from_be_bytes([0x06, 0x00]), Config::default());
     }
 
     #[test]
@@ -1078,7 +1083,7 @@ mod tests {
                                 current_detect_enable: bools,
                             };
 
-                            assert_eq!(config, Config::from_be_bytes(config.to_be_bytes()))
+                            assert_eq!(config, Config::from_be_bytes(config.to_be_bytes()));
                         }
                     }
                 }
@@ -1092,13 +1097,13 @@ mod tests {
         assert_eq!(
             Threshold::from_be_bytes([0x00, 0x00, 0x00, 0x00]),
             Threshold::default()
-        )
+        );
     }
 
     #[test]
     fn threshold_round_trip() {
         for thresholds in [
-            0, 2097152, 4194304, 6291456, 8388608, 10485760, 12582912, 14680064,
+            0, 2_097_152, 4_194_304, 6_291_456, 8_388_608, 10_485_760, 12_582_912, 14_680_064,
         ] {
             for dc_block in enum_iterator::all::<DcBlock>() {
                 let threshold = Threshold {
@@ -1106,7 +1111,7 @@ mod tests {
                     dc_block,
                 };
 
-                assert_eq!(threshold, Threshold::from_be_bytes(threshold.to_be_bytes()))
+                assert_eq!(threshold, Threshold::from_be_bytes(threshold.to_be_bytes()));
             }
         }
     }
@@ -1117,7 +1122,7 @@ mod tests {
         assert_eq!(
             ChannelConfig::from_be_bytes([0x00, 0x00]),
             ChannelConfig::default()
-        )
+        );
     }
 
     #[test]
@@ -1131,7 +1136,7 @@ mod tests {
                         mux,
                     };
 
-                    assert_eq!(config, ChannelConfig::from_be_bytes(config.to_be_bytes()))
+                    assert_eq!(config, ChannelConfig::from_be_bytes(config.to_be_bytes()));
                 }
             }
         }
@@ -1143,13 +1148,13 @@ mod tests {
         assert_eq!(
             OffsetCal::from_be_bytes([0x00, 0x00, 0x00, 0x00]),
             OffsetCal::default()
-        )
+        );
     }
 
     #[test]
     fn channel_offset_cal_round_trip() {
         for offset in [
-            0, 2097152, 4194304, 6291456, 8388608, 10485760, 12582912, 14680064,
+            0, 2_097_152, 4_194_304, 6_291_456, 8_388_608, 10_485_760, 12_582_912, 14_680_064,
         ] {
             let offset_cal = OffsetCal {
                 offset: u24::new(offset),
@@ -1168,13 +1173,13 @@ mod tests {
         assert_eq!(
             GainCal::from_be_bytes([0x80, 0x00, 0x00, 0x00]),
             GainCal::default()
-        )
+        );
     }
 
     #[test]
     fn channel_gain_cal_round_trip() {
         for gain in [
-            0, 2097152, 4194304, 6291456, 8388608, 10485760, 12582912, 14680064,
+            0, 2_097_152, 4_194_304, 6_291_456, 8_388_608, 10_485_760, 12_582_912, 14_680_064,
         ] {
             let gain_cal = GainCal {
                 gain: u24::new(gain),

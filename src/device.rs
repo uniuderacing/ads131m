@@ -47,7 +47,7 @@ macro_rules! impl_channel {
                     "_CFG` register"
                 )]
                 fn set_channel_config(&mut self, config: ChannelConfig) -> Result<(), Error<E>> {
-                    self.write_all_regs(registers::CHANNEL_CONFIG_ADDRS[$channel_num], &mut config.to_be_bytes())
+                    self.write_all_regs(registers::CHANNEL_CONFIG_ADDRS[$channel_num], &config.to_be_bytes())
                 }
             });
 
@@ -91,7 +91,7 @@ macro_rules! impl_channel {
                     // This macro doesn't "use" these variables, so we need to fake it
                     let _ = registers::CHANNEL_OCAL_LSB_ADDRS[$channel_num];
 
-                    self.write_all_regs(registers::CHANNEL_OCAL_MSB_ADDRS[$channel_num], &mut offset_cal.to_be_bytes())
+                    self.write_all_regs(registers::CHANNEL_OCAL_MSB_ADDRS[$channel_num], &offset_cal.to_be_bytes())
                 }
             });
 
@@ -135,7 +135,7 @@ macro_rules! impl_channel {
                     // This macro doesn't "use" these variables, so we need to fake it
                     let _ = registers::CHANNEL_GCAL_LSB_ADDRS[$channel_num];
 
-                    self.write_all_regs(registers::CHANNEL_GCAL_MSB_ADDRS[$channel_num], &mut gain_cal.to_be_bytes())
+                    self.write_all_regs(registers::CHANNEL_GCAL_MSB_ADDRS[$channel_num], &gain_cal.to_be_bytes())
                 }
             });
         }
@@ -163,7 +163,7 @@ macro_rules! impl_model {
                     "\n",
                     "[`embedded-hal`]: https://github.com/rust-embedded/embedded-hal"
                 )]
-                pub fn open(intf: I) -> Result<Self, Error<E>> {
+                pub fn open(intf: I) -> Self {
                     Self::new(intf, Mode::default())
                 }
             });
@@ -181,7 +181,7 @@ macro_rules! impl_model {
                     "\n",
                     "[`embedded-hal`]: https://github.com/rust-embedded/embedded-hal"
                 )]
-                pub fn open_with_mode(intf: I, mode: Mode) -> Result<Self, Error<E>> {
+                pub fn open_with_mode(intf: I, mode: Mode) -> Self {
                     Self::new(intf, mode)
                 }
             });
@@ -221,6 +221,9 @@ where
     /// The device must not be used again for 5us while the registers stabilize
     ///
     /// This also updates the internal cache of the device mode, which can change how the driver communicates
+    ///
+    /// # Errors
+    /// Returns `Err` if there was an error during SPI communication
     pub fn reset(&mut self) -> Result<(), Error<IntfError>> {
         // TODO: Do something with these samples
         let (_, samples) = self.send_simple_command(Command::Reset)?;
@@ -231,11 +234,14 @@ where
     /// Place the device in a low power standby mode
     /// This disables all device channels and powers down non essential circuitry
     /// The sample clock should be disabled after this command to maximize power savings
+    ///
+    /// # Errors
+    /// Returns `Err` if there was an error during SPI communication
     pub fn standby(&mut self) -> Result<(), Error<IntfError>> {
         // TODO: Do something with these samples
         let (_, samples_1) = self.send_simple_command(Command::Standby)?;
         let (resp, samples_2) = self.send_simple_command(Command::Null)?;
-        match Response::try_from_be_bytes(resp.clone()) {
+        match Response::try_from_be_bytes(resp) {
             Some(Response::Standby) => Ok(()),
             _ => Err(Error::UnexpectedResponse(Some(resp))),
         }
@@ -243,39 +249,51 @@ where
 
     /// Wake the device from standby mode
     /// The sample clock should be enables after this command
+    ///
+    /// # Errors
+    /// Returns `Err` if there was an error during SPI communication
     pub fn wakeup(&mut self) -> Result<(), Error<IntfError>> {
         // TODO: Do something with these samples
         let (_, samples_1) = self.send_simple_command(Command::Wakeup)?;
         let (resp, samples_2) = self.send_simple_command(Command::Null)?;
-        match Response::try_from_be_bytes(resp.clone()) {
+        match Response::try_from_be_bytes(resp) {
             Some(Response::Wakeup) => Ok(()),
             _ => Err(Error::UnexpectedResponse(Some(resp))),
         }
     }
 
     /// Lock the device to only respond to the Null, Read Register, and Unlock commands
+    ///
+    /// # Errors
+    /// Returns `Err` if there was an error during SPI communication
     pub fn lock(&mut self) -> Result<(), Error<IntfError>> {
         // TODO: Do something with these samples
         let (_, samples_1) = self.send_simple_command(Command::Lock)?;
         let (resp, samples_2) = self.send_simple_command(Command::Null)?;
-        match Response::try_from_be_bytes(resp.clone()) {
+        match Response::try_from_be_bytes(resp) {
             Some(Response::Lock) => Ok(()),
             _ => Err(Error::UnexpectedResponse(Some(resp))),
         }
     }
 
     /// Unlock the device if it was locked
+    ///
+    /// # Errors
+    /// Returns `Err` if there was an error during SPI communication
     pub fn unlock(&mut self) -> Result<(), Error<IntfError>> {
         // TODO: Do something with these samples
         let (_, samples_1) = self.send_simple_command(Command::Unlock)?;
         let (resp, samples_2) = self.send_simple_command(Command::Null)?;
-        match Response::try_from_be_bytes(resp.clone()) {
+        match Response::try_from_be_bytes(resp) {
             Some(Response::Unlock) => Ok(()),
             _ => Err(Error::UnexpectedResponse(Some(resp))),
         }
     }
 
     /// Read the `ID` register
+    ///
+    /// # Errors
+    /// Returns `Err` if there was an error during SPI communication
     pub fn get_id(&mut self) -> Result<Id, Error<IntfError>> {
         let mut bytes = [0u8; 2];
         self.read_regs(registers::ID_ADDR, &mut bytes)?;
@@ -283,6 +301,9 @@ where
     }
 
     /// Read the `STATUS` register
+    ///
+    /// # Errors
+    /// Returns `Err` if there was an error during SPI communication
     pub fn get_status(&mut self) -> Result<Status, Error<IntfError>> {
         let mut bytes = [0u8; 2];
         self.read_regs(registers::STATUS_ADDR, &mut bytes)?;
@@ -292,18 +313,24 @@ where
     /// Read the `MODE` register
     ///
     /// This also updates the internal cache of the device mode, which can change how the driver communicates
+    ///
+    /// # Errors
+    /// Returns `Err` if there was an error during SPI communication
     pub fn get_mode(&mut self) -> Result<Mode, Error<IntfError>> {
         let mut bytes = [0u8; 2];
         self.read_regs(registers::MODE_ADDR, &mut bytes)?;
         let mode = Mode::from_be_bytes(bytes);
 
-        self.process_new_mode(mode.clone());
+        self.process_new_mode(mode);
         Ok(mode)
     }
 
     /// Write to the `MODE` register
     ///
     /// This also updates the internal cache of the device mode, which can change how the driver communicates
+    ///
+    /// # Errors
+    /// Returns `Err` if there was an error during SPI communication
     pub fn set_mode(&mut self, mode: Mode) -> Result<(), Error<IntfError>> {
         self.write_all_regs(registers::MODE_ADDR, &mode.to_be_bytes())?;
 
@@ -312,6 +339,9 @@ where
     }
 
     /// Read the `CLOCK` register
+    ///
+    /// # Errors
+    /// Returns `Err` if there was an error during SPI communication
     pub fn get_clock(&mut self) -> Result<Clock, Error<IntfError>> {
         let mut bytes = [0u8; 2];
         self.read_regs(registers::CLOCK_ADDR, &mut bytes)?;
@@ -319,11 +349,17 @@ where
     }
 
     /// Write to the `CLOCK` register
+    ///
+    /// # Errors
+    /// Returns `Err` if there was an error during SPI communication
     pub fn set_clock(&mut self, clock: Clock) -> Result<(), Error<IntfError>> {
         self.write_all_regs(registers::CLOCK_ADDR, &clock.to_be_bytes())
     }
 
     /// Read the GAIN1 register
+    ///
+    /// # Errors
+    /// Returns `Err` if there was an error during SPI communication
     pub fn get_gain(&mut self) -> Result<Gain, Error<IntfError>> {
         let mut bytes = [0u8; 2];
         self.read_regs(registers::GAIN_ADDR, &mut bytes)?;
@@ -331,11 +367,17 @@ where
     }
 
     /// Write to the `GAIN1` register
+    ///
+    /// # Errors
+    /// Returns `Err` if there was an error during SPI communication
     pub fn set_gain(&mut self, gain: Gain) -> Result<(), Error<IntfError>> {
         self.write_all_regs(registers::GAIN_ADDR, &gain.to_be_bytes())
     }
 
     /// Read the `CFG` register
+    ///
+    /// # Errors
+    /// Returns `Err` if there was an error during SPI communication
     pub fn get_config(&mut self) -> Result<Config, Error<IntfError>> {
         let mut bytes = [0u8; 2];
         self.read_regs(registers::CFG_ADDR, &mut bytes)?;
@@ -343,11 +385,17 @@ where
     }
 
     /// Write to the `CFG` register
+    ///
+    /// # Errors
+    /// Returns `Err` if there was an error during SPI communication
     pub fn set_config(&mut self, gain: Config) -> Result<(), Error<IntfError>> {
         self.write_all_regs(registers::CFG_ADDR, &gain.to_be_bytes())
     }
 
     /// Read the `THRSHLD_MSB` and `THRSHLD_LSB` registers
+    ///
+    /// # Errors
+    /// Returns `Err` if there was an error during SPI communication
     pub fn get_threshold(&mut self) -> Result<Threshold, Error<IntfError>> {
         // Ensure registers are contiguous
         const_assert_eq!(registers::THRSHLD_MSB_ADDR + 1, registers::THRSHLD_LSB_ADDR);
@@ -360,16 +408,19 @@ where
     }
 
     /// Write to the `THRSHLD_MSB` and `THRSHLD_LSB` registers
+    ///
+    /// # Errors
+    /// Returns `Err` if there was an error during SPI communication
     pub fn set_threshold(&mut self, threshold: Threshold) -> Result<(), Error<IntfError>> {
         // Ensure registers are contiguous
         const_assert_eq!(registers::THRSHLD_MSB_ADDR + 1, registers::THRSHLD_LSB_ADDR);
         // This macro doesn't "use" these variables, so we need to fake it
         let _ = registers::THRSHLD_LSB_ADDR;
 
-        self.write_all_regs(registers::THRSHLD_MSB_ADDR, &mut threshold.to_be_bytes())
+        self.write_all_regs(registers::THRSHLD_MSB_ADDR, &threshold.to_be_bytes())
     }
 
-    fn new(intf: Intf, mode: Mode) -> Result<Self, Error<IntfError>> {
+    fn new(intf: Intf, mode: Mode) -> Self {
         let mut driver = Self {
             intf,
             read_buf: [0; BUF_SIZE],
@@ -383,7 +434,7 @@ where
         };
         driver.process_new_mode(mode);
 
-        Ok(driver)
+        driver
     }
 
     fn process_new_mode(&mut self, mode: Mode) {
@@ -404,6 +455,7 @@ where
         self.spi_crc_enable = mode.spi_crc_enable;
     }
 
+    #[allow(clippy::identity_op)]
     fn send_simple_command(
         &mut self,
         command: Command,
@@ -487,15 +539,17 @@ where
     /// Panics if `buf` is not `self.word_len` * `CHANNELS` in length
     fn decode_samples(&self, buf: &[u8]) -> [[u8; 3]; CHANNELS] {
         let mut sample_data = [[0; 3]; CHANNELS];
-        for channel in 0..CHANNELS {
+        for (channel, sample) in sample_data.iter_mut().enumerate() {
             let word_idx = channel * self.word_len;
             match self.word_packing {
-                WordLength::Bits16 => sample_data[channel] = [buf[word_idx], buf[word_idx + 1], 0],
+                WordLength::Bits16 => {
+                    sample.copy_from_slice(&[buf[word_idx], buf[word_idx + 1], 0]);
+                }
                 WordLength::Bits24 | WordLength::Bits32Zero => {
-                    sample_data[channel].copy_from_slice(&buf[word_idx..word_idx + 3])
+                    sample.copy_from_slice(&buf[word_idx..word_idx + 3]);
                 }
                 WordLength::Bits32Signed => {
-                    sample_data[channel].copy_from_slice(&buf[word_idx + 1..word_idx + 4])
+                    sample.copy_from_slice(&buf[word_idx + 1..word_idx + 4]);
                 }
             };
         }
@@ -527,6 +581,7 @@ where
     Intf: Interface<IntfError, IntfWord>,
     IntfWord: Copy,
 {
+    #[allow(clippy::cast_possible_truncation, clippy::identity_op)]
     fn read_regs(&mut self, address: u8, buf: &mut [u8]) -> Result<(), Error<IntfError>> {
         let reg_count = buf.len() / 2;
         assert!(reg_count > 0 && reg_count < 3);
@@ -535,8 +590,8 @@ where
 
         // Send command
         let request_bytes = [
-            0xA0 | u8::from(address) >> 1,
-            (u8::from(address) & 0b1) << 7 | ((reg_count - 1) & 0x7F) as u8,
+            0xA0 | address >> 1,
+            (address & 0b1) << 7 | ((reg_count - 1) & 0x7F) as u8,
         ];
         self.write_buf[0..2].copy_from_slice(&request_bytes);
         bytes_written = 2;
@@ -600,6 +655,7 @@ where
     }
 
     // Returns the number of registers actually written
+    #[allow(clippy::cast_possible_truncation, clippy::identity_op)]
     fn write_regs(&mut self, address: u8, buf: &[u8]) -> Result<usize, Error<IntfError>> {
         let reg_count = buf.len() / 2;
         assert!(reg_count > 0 && reg_count < 3);
@@ -608,8 +664,8 @@ where
 
         // Send command
         let request_bytes = [
-            0x60 | u8::from(address) >> 1,
-            (u8::from(address) & 0b1) << 7 | ((reg_count - 1) & 0x7F) as u8,
+            0x60 | address >> 1,
+            (address & 0b1) << 7 | ((reg_count - 1) & 0x7F) as u8,
         ];
         self.write_buf[0..2].copy_from_slice(&request_bytes);
         bytes_written = 2;
@@ -655,7 +711,7 @@ where
         let samples_2 =
             self.decode_samples(&self.read_buf[self.word_len..self.word_len * (CHANNELS + 1)]);
 
-        if resp[0] != 0x40 | u8::from(address) >> 1 || resp[1] & 0x80 != u8::from(address) << 7 {
+        if resp[0] != 0x40 | address >> 1 || resp[1] & 0x80 != address << 7 {
             return Err(Error::UnexpectedResponse(Some(resp.try_into().unwrap())));
         }
 

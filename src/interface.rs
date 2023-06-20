@@ -1,16 +1,17 @@
-//! Helper trait for SPI interfaces with different word lengths
+//! SPI interface abstraction traits
 
 use embedded_hal::spi::FullDuplex;
 use nb;
 
 use crate::Error;
 
-/// Trait for interacting with SPI interfaces with different word sizes
+/// High level abstraction over a SPI interface
+/// A SPI interface must implement this in order to be used
 pub trait Interface<E, W: Copy> {
     /// Length of a word in bytes
     const WORD_LEN: usize;
 
-    /// Read and write some bytes on the SPI interface
+    /// Perform a SPI transaction on the interface
     ///
     /// The transaction will be the length of the `send` or `receive` buffer, whichever is longer.
     /// If `send` is shorter than `receive`, the remaining bytes will be sent as zeros.
@@ -18,30 +19,49 @@ pub trait Interface<E, W: Copy> {
     ///
     /// Both buffer lengths MUST be a multiple of two.
     ///
-    /// Panics if either buffer length is not a multiple of two.
+    /// # Errors
+    /// Will return `Err` if the underlying SPI interface encounters an error.
+    ///
+    /// # Panics
+    /// Will panic if either buffer length is not a multiple of two.
     fn transfer(&mut self, send: &[u8], receive: &mut [u8]) -> Result<(), Error<E>>;
 }
 
-/// Trait for interacting with an [`embedded-hal`] SPI interface
+/// Trait for interacting with an [`FullDuplex`] interface word by word
 ///
-/// [`embedded-hal`]: https://github.com/rust-embedded/embedded-hal
+/// Types implementing this trait automatically implement [`Interface`].
+/// While this is the only thing implementing [`Interface`] currently, the logic is split across two traits to allow
+/// for future DMA support.
 pub trait WordTransfer<E, W: Copy> {
     /// Length of a word in bytes
     const WORD_LEN: usize;
 
     /// Attempt to read and decode a word to a buffer
     ///
-    /// Note: A word must be written before calling this
+    /// # Note
+    /// A word must be written before calling this
     ///
-    /// Panics if buf length is not `Self::WORD_LEN`
+    /// # Errors
+    /// Will return [`Err(WouldBlock)`](nb::Error::WouldBlock) if the read would require blocking.
+    ///
+    /// Will return [`Err(Other)`](nb::Error::Other) if the underlying SPI interface encounters an error.
+    ///
+    /// # Panics
+    /// Will panic if buf length is not [`WORD_LEN`](Self::WORD_LEN)
     fn read_word(&mut self, buf: &mut [u8]) -> nb::Result<(), E>;
 
     /// Encode a word from a buffer
     ///
-    /// Panics if buf length is not `Self::WORD_LEN`
+    /// # Panics
+    /// Will panic if buf length is not [`WORD_LEN`](Self::WORD_LEN)
     fn encode_word(buf: &[u8]) -> W;
 
     /// Attempt to write a word
+    ///
+    /// # Errors
+    /// Will return [`Err(WouldBlock)`](nb::Error::WouldBlock) if the write would require blocking.
+    ///
+    /// Will return [`Err(Other)`](nb::Error::Other) if the underlying SPI interface encounters an error.
     fn write_word(&mut self, word: W) -> nb::Result<(), E>;
 }
 
@@ -97,7 +117,7 @@ impl<I: FullDuplex<u16, Error = E>, E> WordTransfer<E, u16> for I {
     }
 
     fn encode_word(buf: &[u8]) -> u16 {
-        u16::from_be_bytes(buf.try_into().unwrap())
+        u16::from_be_bytes(buf.try_into().expect("buf should be WORD_LEN"))
     }
 
     fn write_word(&mut self, word: u16) -> nb::Result<(), E> {

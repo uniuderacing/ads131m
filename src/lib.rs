@@ -47,7 +47,6 @@
     clippy::nursery,
     missing_docs
 )]
-#![allow(clippy::missing_errors_doc, clippy::similar_names)]
 #![deny(unsafe_code)]
 #![no_std]
 
