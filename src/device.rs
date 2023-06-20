@@ -11,7 +11,9 @@ use crate::types::{
 use crate::Error;
 use concat_idents::concat_idents;
 use crc::{Crc, CRC_16_CMS, CRC_16_IBM_3740};
+use ringbuffer::{ConstGenericRingBuffer, RingBuffer, RingBufferExt, RingBufferWrite};
 use static_assertions::const_assert_eq;
+use ux::i24;
 
 // Since no const-generic math, we have to use the max possible buffer size
 // 32-bit words (4 bytes) * ( 1 response word + 8 channel data + 1 CRC word)
@@ -31,7 +33,10 @@ macro_rules! impl_channel {
                 #[doc=concat!(
                     "Read the `CH",
                     $channel_num,
-                    "_CFG` register"
+                    "_CFG` register",
+                    "\n\n",
+                    "# Errors\n",
+                    "Returns `Err` if there was an error during SPI communication"
                 )]
                 fn get_channel_config(&mut self) -> Result<ChannelConfig, Error> {
                     let mut bytes = [0u8; 2];
@@ -44,7 +49,10 @@ macro_rules! impl_channel {
                 #[doc=concat!(
                     "Write to the `CH",
                     $channel_num,
-                    "_CFG` register"
+                    "_CFG` register",
+                    "\n\n",
+                    "# Errors\n",
+                    "Returns `Err` if there was an error during SPI communication"
                 )]
                 fn set_channel_config(&mut self, config: ChannelConfig) -> Result<(), Error> {
                     self.write_all_regs(registers::CHANNEL_CONFIG_ADDRS[$channel_num], &config.to_be_bytes())
@@ -57,7 +65,10 @@ macro_rules! impl_channel {
                     $channel_num,
                     "_OCAL_MSB` and `CH",
                     $channel_num,
-                    "_OCAL_LSB` registers"
+                    "_OCAL_LSB` registers",
+                    "\n\n",
+                    "# Errors\n",
+                    "Returns `Err` if there was an error during SPI communication"
                 )]
                 fn get_channel_offset_cal(&mut self) -> Result<OffsetCal, Error> {
                     // Ensure registers are contiguous
@@ -80,7 +91,10 @@ macro_rules! impl_channel {
                     $channel_num,
                     "_OCAL_MSB` and `CH",
                     $channel_num,
-                    "_OCAL_LSB` registers"
+                    "_OCAL_LSB` registers",
+                    "\n\n",
+                    "# Errors\n",
+                    "Returns `Err` if there was an error during SPI communication"
                 )]
                 fn set_channel_offset_cal(&mut self, offset_cal: OffsetCal) -> Result<(), Error> {
                     // Ensure registers are contiguous
@@ -101,7 +115,10 @@ macro_rules! impl_channel {
                     $channel_num,
                     "_GCAL_MSB` and `CH",
                     $channel_num,
-                    "_GCAL_LSB` registers"
+                    "_GCAL_LSB` registers",
+                    "\n\n",
+                    "# Errors\n",
+                    "Returns `Err` if there was an error during SPI communication"
                 )]
                 fn get_channel_gain_cal(&mut self) -> Result<GainCal, Error> {
                     // Ensure registers are contiguous
@@ -124,7 +141,10 @@ macro_rules! impl_channel {
                     $channel_num,
                     "_GCAL_MSB` and `CH",
                     $channel_num,
-                    "_GCAL_LSB` registers"
+                    "_GCAL_LSB` registers",
+                    "\n\n",
+                    "# Errors\n",
+                    "Returns `Err` if there was an error during SPI communication"
                 )]
                 fn set_channel_gain_cal(&mut self, gain_cal: GainCal) -> Result<(), Error> {
                     // Ensure registers are contiguous
@@ -144,7 +164,7 @@ macro_rules! impl_channel {
 
 macro_rules! impl_model {
     ($model:ident, $channel_count:literal, [$($channel:ident),+]) => {
-        impl<I, W> Ads131m<I, W, $channel_count>
+        impl<I, W, const BUFSIZE: usize> Ads131m<I, W, BUFSIZE, $channel_count>
         where
             I: Interface<W>,
             W: Copy,
@@ -187,8 +207,66 @@ macro_rules! impl_model {
             });
         }
 
-        $(impl<I: Interface<W>, W: Copy> $channel<I> for Ads131m<I, W, $channel_count> {})+
+        $(impl<I: Interface<W>, W: Copy, const BUFSIZE: usize> $channel<I> for Ads131m<I, W, BUFSIZE, $channel_count> {})+
     };
+}
+
+/// A single ADC sample grab for all channels
+pub struct SampleGrab<const CHANNELS: usize> {
+    data: [[u8; 3]; CHANNELS],
+}
+
+impl<const CHANNELS: usize> SampleGrab<CHANNELS> {
+    /// Get a reference to the underlying sample bytes
+    #[must_use]
+    pub const fn as_bytes(&self) -> &[[u8; 3]; CHANNELS] {
+        &self.data
+    }
+
+    /// Extract the underlying sample bytes
+    #[must_use]
+    pub const fn to_bytes(self) -> [[u8; 3]; CHANNELS] {
+        self.data
+    }
+
+    /// Convert the sample data into signed integers between
+    #[must_use]
+    pub fn into_ints(self) -> [i24; CHANNELS] {
+        let mut values = [i24::new(0); CHANNELS];
+        for (idx, value) in values.iter_mut().enumerate() {
+            let bytes = self.data[idx];
+            if bytes[0] >= 0x80 {
+                // Negative
+                *value = i24::new(i32::from_be_bytes([0xFF, bytes[0], bytes[1], bytes[2]]));
+            } else {
+                // Positive
+                *value = i24::new(i32::from_be_bytes([0, bytes[0], bytes[1], bytes[2]]));
+            }
+        }
+
+        values
+    }
+
+    /// Convert the sample data into floating point numbers between -1 and 1
+    #[must_use]
+    pub fn into_floats(self) -> [f64; CHANNELS] {
+        let mut values = [0.0; CHANNELS];
+        for (idx, value) in values.iter_mut().enumerate() {
+            let bytes = self.data[idx];
+            if bytes[0] >= 0x80 {
+                // Negative
+                *value = f64::from(i32::from_be_bytes([0xFF, bytes[0], bytes[1], bytes[2]]))
+                    / f64::from(i32::from(i24::MIN))
+                    * -1.0;
+            } else {
+                // Positive
+                *value = f64::from(i32::from_be_bytes([0, bytes[0], bytes[1], bytes[2]]))
+                    / f64::from(i32::from(i24::MAX));
+            }
+        }
+
+        values
+    }
 }
 
 /// Driver
@@ -196,11 +274,13 @@ macro_rules! impl_model {
 /// TODO: Description
 ///
 /// TODO: Examples
-pub struct Ads131m<I: Interface<W>, W: Copy, const C: usize> {
+pub struct Ads131m<I: Interface<W>, W: Copy, const BUFSIZE: usize, const CHANNELS: usize> {
     // Comms
     intf: I,
     read_buf: [u8; BUF_SIZE],
     write_buf: [u8; BUF_SIZE],
+    // Samples
+    sample_buf: ConstGenericRingBuffer<SampleGrab<CHANNELS>, BUFSIZE>,
     // Mode
     crc_table: Crc<u16>,
     word_len: usize,
@@ -210,7 +290,7 @@ pub struct Ads131m<I: Interface<W>, W: Copy, const C: usize> {
     w: PhantomData<W>,
 }
 
-impl<I, W, const CHANNELS: usize> Ads131m<I, W, CHANNELS>
+impl<I, W, const BUFSIZE: usize, const CHANNELS: usize> Ads131m<I, W, BUFSIZE, CHANNELS>
 where
     I: Interface<W>,
     W: Copy,
@@ -424,6 +504,7 @@ where
             intf,
             read_buf: [0; BUF_SIZE],
             write_buf: [0; BUF_SIZE],
+            sample_buf: ConstGenericRingBuffer::new(),
             crc_table: Crc::<u16>::new(&CRC_16_CMS),
             word_len: 2,
             word_packing: WordLength::Bits16,
@@ -573,7 +654,8 @@ pub trait RegisterAccess {
     fn write_all_regs(&mut self, address: u8, buf: &[u8]) -> Result<(), Error>;
 }
 
-impl<I, W, const CHANNELS: usize> RegisterAccess for Ads131m<I, W, CHANNELS>
+impl<I, W, const BUFSIZE: usize, const CHANNELS: usize> RegisterAccess
+    for Ads131m<I, W, BUFSIZE, CHANNELS>
 where
     I: Interface<W>,
     W: Copy,
@@ -770,3 +852,97 @@ impl_model!(
         AdcChannel7
     ]
 );
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use float_cmp::assert_approx_eq;
+
+    #[test]
+    fn sample_to_ints() {
+        assert_eq!(
+            SampleGrab {
+                data: [[0x7F, 0xFF, 0xFF]]
+            }
+            .into_ints(),
+            [i24::new(8_388_607)]
+        );
+        assert_eq!(
+            SampleGrab {
+                data: [[0x00, 0x00, 0x01]]
+            }
+            .into_ints(),
+            [i24::new(1)]
+        );
+        assert_eq!(
+            SampleGrab {
+                data: [[0x00, 0x00, 0x00]]
+            }
+            .into_ints(),
+            [i24::new(0)]
+        );
+        assert_eq!(
+            SampleGrab {
+                data: [[0xFF, 0xFF, 0xFF]]
+            }
+            .into_ints(),
+            [i24::new(-1)]
+        );
+        assert_eq!(
+            SampleGrab {
+                data: [[0x80, 0x00, 0x00]]
+            }
+            .into_ints(),
+            [i24::new(-8_388_608)]
+        );
+    }
+
+    #[test]
+    fn sample_to_floats() {
+        assert_approx_eq!(
+            f64,
+            SampleGrab {
+                data: [[0x7F, 0xFF, 0xFF]]
+            }
+            .into_floats()[0],
+            1.0,
+            epsilon = 1e-8
+        );
+        assert_approx_eq!(
+            f64,
+            SampleGrab {
+                data: [[0x00, 0x00, 0x01]]
+            }
+            .into_floats()[0],
+            0.000_000_119_209,
+            epsilon = 1e-8
+        );
+        assert_approx_eq!(
+            f64,
+            SampleGrab {
+                data: [[0x00, 0x00, 0x00]]
+            }
+            .into_floats()[0],
+            0.0,
+            epsilon = 1e-8
+        );
+        assert_approx_eq!(
+            f64,
+            SampleGrab {
+                data: [[0xFF, 0xFF, 0xFF]]
+            }
+            .into_floats()[0],
+            -0.000_000_119_209,
+            epsilon = 1e-8
+        );
+        assert_approx_eq!(
+            f64,
+            SampleGrab {
+                data: [[0x80, 0x00, 0x00]]
+            }
+            .into_floats()[0],
+            -1.0,
+            epsilon = 1e-8
+        );
+    }
+}
