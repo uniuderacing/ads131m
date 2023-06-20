@@ -7,7 +7,7 @@ use crate::Error;
 
 /// High level abstraction over a SPI interface
 /// A SPI interface must implement this in order to be used
-pub trait Interface<E, W: Copy> {
+pub trait Interface<W: Copy> {
     /// Length of a word in bytes
     const WORD_LEN: usize;
 
@@ -24,7 +24,7 @@ pub trait Interface<E, W: Copy> {
     ///
     /// # Panics
     /// Will panic if either buffer length is not a multiple of two.
-    fn transfer(&mut self, send: &[u8], receive: &mut [u8]) -> Result<(), Error<E>>;
+    fn transfer(&mut self, send: &[u8], receive: &mut [u8]) -> Result<(), Error>;
 }
 
 /// Trait for interacting with an [`FullDuplex`] interface word by word
@@ -32,7 +32,7 @@ pub trait Interface<E, W: Copy> {
 /// Types implementing this trait automatically implement [`Interface`].
 /// While this is the only thing implementing [`Interface`] currently, the logic is split across two traits to allow
 /// for future DMA support.
-pub trait WordTransfer<E, W: Copy> {
+pub trait WordTransfer<W: Copy> {
     /// Length of a word in bytes
     const WORD_LEN: usize;
 
@@ -48,7 +48,7 @@ pub trait WordTransfer<E, W: Copy> {
     ///
     /// # Panics
     /// Will panic if buf length is not [`WORD_LEN`](Self::WORD_LEN)
-    fn read_word(&mut self, buf: &mut [u8]) -> nb::Result<(), E>;
+    fn read_word(&mut self, buf: &mut [u8]) -> nb::Result<(), Error>;
 
     /// Encode a word from a buffer
     ///
@@ -62,13 +62,13 @@ pub trait WordTransfer<E, W: Copy> {
     /// Will return [`Err(WouldBlock)`](nb::Error::WouldBlock) if the write would require blocking.
     ///
     /// Will return [`Err(Other)`](nb::Error::Other) if the underlying SPI interface encounters an error.
-    fn write_word(&mut self, word: W) -> nb::Result<(), E>;
+    fn write_word(&mut self, word: W) -> nb::Result<(), Error>;
 }
 
-impl<T: WordTransfer<E, W>, E, W: Copy> Interface<E, W> for T {
+impl<T: WordTransfer<W>, W: Copy> Interface<W> for T {
     const WORD_LEN: usize = Self::WORD_LEN;
 
-    fn transfer(&mut self, send: &[u8], receive: &mut [u8]) -> Result<(), Error<E>> {
+    fn transfer(&mut self, send: &[u8], receive: &mut [u8]) -> Result<(), Error> {
         debug_assert!(send.len() % 2 == 0);
         debug_assert!(receive.len() % 2 == 0);
 
@@ -89,7 +89,7 @@ impl<T: WordTransfer<E, W>, E, W: Copy> Interface<E, W> for T {
                 match self.write_word(word) {
                     Ok(_) => bytes_written += Self::WORD_LEN,
                     Err(nb::Error::WouldBlock) => word_cache = Some(word),
-                    Err(nb::Error::Other(e)) => return Err(Error::SpiError(e)),
+                    Err(nb::Error::Other(e)) => return Err(e),
                 }
             }
 
@@ -98,7 +98,7 @@ impl<T: WordTransfer<E, W>, E, W: Copy> Interface<E, W> for T {
                 match self.read_word(&mut receive[bytes_read..(bytes_read + Self::WORD_LEN)]) {
                     Ok(_) => bytes_read += Self::WORD_LEN,
                     Err(nb::Error::WouldBlock) => {}
-                    Err(nb::Error::Other(e)) => return Err(Error::SpiError(e)),
+                    Err(nb::Error::Other(e)) => return Err(e),
                 }
             }
         }
@@ -107,11 +107,14 @@ impl<T: WordTransfer<E, W>, E, W: Copy> Interface<E, W> for T {
     }
 }
 
-impl<I: FullDuplex<u16, Error = E>, E> WordTransfer<E, u16> for I {
+impl<I: FullDuplex<u16>> WordTransfer<u16> for I {
     const WORD_LEN: usize = 2;
 
-    fn read_word(&mut self, buf: &mut [u8]) -> nb::Result<(), E> {
-        let word = self.read()?;
+    fn read_word(&mut self, buf: &mut [u8]) -> nb::Result<(), Error> {
+        let word = self.read().map_err(|e| match e {
+            nb::Error::WouldBlock => nb::Error::WouldBlock,
+            nb::Error::Other(_) => nb::Error::Other(Error::SpiError),
+        })?;
         buf.copy_from_slice(&word.to_be_bytes());
         Ok(())
     }
@@ -120,16 +123,23 @@ impl<I: FullDuplex<u16, Error = E>, E> WordTransfer<E, u16> for I {
         u16::from_be_bytes(buf.try_into().expect("buf should be WORD_LEN"))
     }
 
-    fn write_word(&mut self, word: u16) -> nb::Result<(), E> {
-        self.send(word)
+    fn write_word(&mut self, word: u16) -> nb::Result<(), Error> {
+        self.send(word).map_err(|e| match e {
+            nb::Error::WouldBlock => nb::Error::WouldBlock,
+            nb::Error::Other(_) => nb::Error::Other(Error::SpiError),
+        })
     }
 }
 
-impl<I: FullDuplex<u8, Error = E>, E> WordTransfer<E, u8> for I {
+impl<I: FullDuplex<u8>> WordTransfer<u8> for I {
     const WORD_LEN: usize = 1;
 
-    fn read_word(&mut self, buf: &mut [u8]) -> nb::Result<(), E> {
-        buf[0] = self.read()?;
+    fn read_word(&mut self, buf: &mut [u8]) -> nb::Result<(), Error> {
+        let word = self.read().map_err(|e| match e {
+            nb::Error::WouldBlock => nb::Error::WouldBlock,
+            nb::Error::Other(_) => nb::Error::Other(Error::SpiError),
+        })?;
+        buf[0] = word;
         Ok(())
     }
 
@@ -137,8 +147,11 @@ impl<I: FullDuplex<u8, Error = E>, E> WordTransfer<E, u8> for I {
         buf[0]
     }
 
-    fn write_word(&mut self, word: u8) -> nb::Result<(), E> {
-        self.send(word)
+    fn write_word(&mut self, word: u8) -> nb::Result<(), Error> {
+        self.send(word).map_err(|e| match e {
+            nb::Error::WouldBlock => nb::Error::WouldBlock,
+            nb::Error::Other(_) => nb::Error::Other(Error::SpiError),
+        })
     }
 }
 

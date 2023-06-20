@@ -1,9 +1,9 @@
 //! The errors for this crate
 
 /// The main error type
-pub enum Error<S> {
+pub enum Error {
     /// Error from the inner SPI interface
-    SpiError(S),
+    SpiError,
     /// CRC checksum error on a received SPI message
     ReceiveCrc {
         /// The computed CRC checksum
@@ -13,10 +13,4 @@ pub enum Error<S> {
     },
     /// An unexpected message was received from the device
     UnexpectedResponse(Option<[u8; 2]>),
-}
-
-impl<S> From<S> for Error<S> {
-    fn from(value: S) -> Self {
-        Self::SpiError(value)
-    }
 }

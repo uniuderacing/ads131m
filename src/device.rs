@@ -23,9 +23,9 @@ const BUF_SIZE: usize = 4 * (1 + 8 + 1);
 macro_rules! impl_channel {
     ($trait_name:ident, $channel_name:ident, $channel_num:literal) => {
         #[doc=concat!("Methods for configuring ADC channel ", $channel_num)]
-        pub trait $trait_name<I, E>
+        pub trait $trait_name<I>
         where
-            Self: RegisterAccess<E>,
+            Self: RegisterAccess,
         {
             concat_idents!(get_channel_config = get_, $channel_name, _config, {
                 #[doc=concat!(
@@ -33,7 +33,7 @@ macro_rules! impl_channel {
                     $channel_num,
                     "_CFG` register"
                 )]
-                fn get_channel_config(&mut self) -> Result<ChannelConfig, Error<E>> {
+                fn get_channel_config(&mut self) -> Result<ChannelConfig, Error> {
                     let mut bytes = [0u8; 2];
                     self.read_regs(registers::CHANNEL_CONFIG_ADDRS[$channel_num], &mut bytes)?;
                     Ok(ChannelConfig::from_be_bytes(bytes))
@@ -46,7 +46,7 @@ macro_rules! impl_channel {
                     $channel_num,
                     "_CFG` register"
                 )]
-                fn set_channel_config(&mut self, config: ChannelConfig) -> Result<(), Error<E>> {
+                fn set_channel_config(&mut self, config: ChannelConfig) -> Result<(), Error> {
                     self.write_all_regs(registers::CHANNEL_CONFIG_ADDRS[$channel_num], &config.to_be_bytes())
                 }
             });
@@ -59,7 +59,7 @@ macro_rules! impl_channel {
                     $channel_num,
                     "_OCAL_LSB` registers"
                 )]
-                fn get_channel_offset_cal(&mut self) -> Result<OffsetCal, Error<E>> {
+                fn get_channel_offset_cal(&mut self) -> Result<OffsetCal, Error> {
                     // Ensure registers are contiguous
                     const_assert_eq!(
                         registers::CHANNEL_OCAL_MSB_ADDRS[$channel_num] + 1,
@@ -82,7 +82,7 @@ macro_rules! impl_channel {
                     $channel_num,
                     "_OCAL_LSB` registers"
                 )]
-                fn set_channel_offset_cal(&mut self, offset_cal: OffsetCal) -> Result<(), Error<E>> {
+                fn set_channel_offset_cal(&mut self, offset_cal: OffsetCal) -> Result<(), Error> {
                     // Ensure registers are contiguous
                     const_assert_eq!(
                         registers::CHANNEL_OCAL_MSB_ADDRS[$channel_num] + 1,
@@ -103,7 +103,7 @@ macro_rules! impl_channel {
                     $channel_num,
                     "_GCAL_LSB` registers"
                 )]
-                fn get_channel_gain_cal(&mut self) -> Result<GainCal, Error<E>> {
+                fn get_channel_gain_cal(&mut self) -> Result<GainCal, Error> {
                     // Ensure registers are contiguous
                     const_assert_eq!(
                         registers::CHANNEL_GCAL_MSB_ADDRS[$channel_num] + 1,
@@ -126,7 +126,7 @@ macro_rules! impl_channel {
                     $channel_num,
                     "_GCAL_LSB` registers"
                 )]
-                fn set_channel_gain_cal(&mut self, gain_cal: GainCal) -> Result<(), Error<E>> {
+                fn set_channel_gain_cal(&mut self, gain_cal: GainCal) -> Result<(), Error> {
                     // Ensure registers are contiguous
                     const_assert_eq!(
                         registers::CHANNEL_GCAL_MSB_ADDRS[$channel_num] + 1,
@@ -144,9 +144,9 @@ macro_rules! impl_channel {
 
 macro_rules! impl_model {
     ($model:ident, $channel_count:literal, [$($channel:ident),+]) => {
-        impl<I, E, W> Ads131m<I, E, W, $channel_count>
+        impl<I, W> Ads131m<I, W, $channel_count>
         where
-            I: Interface<E, W>,
+            I: Interface<W>,
             W: Copy,
         {
             concat_idents!(open = open_, $model, {
@@ -187,7 +187,7 @@ macro_rules! impl_model {
             });
         }
 
-        $(impl<I: Interface<E, W>, E, W: Copy> $channel<I, E> for Ads131m<I, E, W, $channel_count> {})+
+        $(impl<I: Interface<W>, W: Copy> $channel<I> for Ads131m<I, W, $channel_count> {})+
     };
 }
 
@@ -196,7 +196,7 @@ macro_rules! impl_model {
 /// TODO: Description
 ///
 /// TODO: Examples
-pub struct Ads131m<I: Interface<E, W>, E, W: Copy, const C: usize> {
+pub struct Ads131m<I: Interface<W>, W: Copy, const C: usize> {
     // Comms
     intf: I,
     read_buf: [u8; BUF_SIZE],
@@ -207,14 +207,13 @@ pub struct Ads131m<I: Interface<E, W>, E, W: Copy, const C: usize> {
     word_packing: WordLength,
     spi_crc_enable: bool,
     //Type stuff
-    e: PhantomData<E>,
     w: PhantomData<W>,
 }
 
-impl<Intf, IntfError, IntfWord, const CHANNELS: usize> Ads131m<Intf, IntfError, IntfWord, CHANNELS>
+impl<I, W, const CHANNELS: usize> Ads131m<I, W, CHANNELS>
 where
-    Intf: Interface<IntfError, IntfWord>,
-    IntfWord: Copy,
+    I: Interface<W>,
+    W: Copy,
 {
     /// Reset the device to it's default state.
     ///
@@ -224,7 +223,7 @@ where
     ///
     /// # Errors
     /// Returns `Err` if there was an error during SPI communication
-    pub fn reset(&mut self) -> Result<(), Error<IntfError>> {
+    pub fn reset(&mut self) -> Result<(), Error> {
         // TODO: Do something with these samples
         let (_, samples) = self.send_simple_command(Command::Reset)?;
         self.process_new_mode(Mode::default());
@@ -237,7 +236,7 @@ where
     ///
     /// # Errors
     /// Returns `Err` if there was an error during SPI communication
-    pub fn standby(&mut self) -> Result<(), Error<IntfError>> {
+    pub fn standby(&mut self) -> Result<(), Error> {
         // TODO: Do something with these samples
         let (_, samples_1) = self.send_simple_command(Command::Standby)?;
         let (resp, samples_2) = self.send_simple_command(Command::Null)?;
@@ -252,7 +251,7 @@ where
     ///
     /// # Errors
     /// Returns `Err` if there was an error during SPI communication
-    pub fn wakeup(&mut self) -> Result<(), Error<IntfError>> {
+    pub fn wakeup(&mut self) -> Result<(), Error> {
         // TODO: Do something with these samples
         let (_, samples_1) = self.send_simple_command(Command::Wakeup)?;
         let (resp, samples_2) = self.send_simple_command(Command::Null)?;
@@ -266,7 +265,7 @@ where
     ///
     /// # Errors
     /// Returns `Err` if there was an error during SPI communication
-    pub fn lock(&mut self) -> Result<(), Error<IntfError>> {
+    pub fn lock(&mut self) -> Result<(), Error> {
         // TODO: Do something with these samples
         let (_, samples_1) = self.send_simple_command(Command::Lock)?;
         let (resp, samples_2) = self.send_simple_command(Command::Null)?;
@@ -280,7 +279,7 @@ where
     ///
     /// # Errors
     /// Returns `Err` if there was an error during SPI communication
-    pub fn unlock(&mut self) -> Result<(), Error<IntfError>> {
+    pub fn unlock(&mut self) -> Result<(), Error> {
         // TODO: Do something with these samples
         let (_, samples_1) = self.send_simple_command(Command::Unlock)?;
         let (resp, samples_2) = self.send_simple_command(Command::Null)?;
@@ -294,7 +293,7 @@ where
     ///
     /// # Errors
     /// Returns `Err` if there was an error during SPI communication
-    pub fn get_id(&mut self) -> Result<Id, Error<IntfError>> {
+    pub fn get_id(&mut self) -> Result<Id, Error> {
         let mut bytes = [0u8; 2];
         self.read_regs(registers::ID_ADDR, &mut bytes)?;
         Ok(Id::from_be_bytes(bytes))
@@ -304,7 +303,7 @@ where
     ///
     /// # Errors
     /// Returns `Err` if there was an error during SPI communication
-    pub fn get_status(&mut self) -> Result<Status, Error<IntfError>> {
+    pub fn get_status(&mut self) -> Result<Status, Error> {
         let mut bytes = [0u8; 2];
         self.read_regs(registers::STATUS_ADDR, &mut bytes)?;
         Ok(Status::from_be_bytes(bytes))
@@ -316,7 +315,7 @@ where
     ///
     /// # Errors
     /// Returns `Err` if there was an error during SPI communication
-    pub fn get_mode(&mut self) -> Result<Mode, Error<IntfError>> {
+    pub fn get_mode(&mut self) -> Result<Mode, Error> {
         let mut bytes = [0u8; 2];
         self.read_regs(registers::MODE_ADDR, &mut bytes)?;
         let mode = Mode::from_be_bytes(bytes);
@@ -331,7 +330,7 @@ where
     ///
     /// # Errors
     /// Returns `Err` if there was an error during SPI communication
-    pub fn set_mode(&mut self, mode: Mode) -> Result<(), Error<IntfError>> {
+    pub fn set_mode(&mut self, mode: Mode) -> Result<(), Error> {
         self.write_all_regs(registers::MODE_ADDR, &mode.to_be_bytes())?;
 
         self.process_new_mode(mode);
@@ -342,7 +341,7 @@ where
     ///
     /// # Errors
     /// Returns `Err` if there was an error during SPI communication
-    pub fn get_clock(&mut self) -> Result<Clock, Error<IntfError>> {
+    pub fn get_clock(&mut self) -> Result<Clock, Error> {
         let mut bytes = [0u8; 2];
         self.read_regs(registers::CLOCK_ADDR, &mut bytes)?;
         Ok(Clock::from_be_bytes(bytes))
@@ -352,7 +351,7 @@ where
     ///
     /// # Errors
     /// Returns `Err` if there was an error during SPI communication
-    pub fn set_clock(&mut self, clock: Clock) -> Result<(), Error<IntfError>> {
+    pub fn set_clock(&mut self, clock: Clock) -> Result<(), Error> {
         self.write_all_regs(registers::CLOCK_ADDR, &clock.to_be_bytes())
     }
 
@@ -360,7 +359,7 @@ where
     ///
     /// # Errors
     /// Returns `Err` if there was an error during SPI communication
-    pub fn get_gain(&mut self) -> Result<Gain, Error<IntfError>> {
+    pub fn get_gain(&mut self) -> Result<Gain, Error> {
         let mut bytes = [0u8; 2];
         self.read_regs(registers::GAIN_ADDR, &mut bytes)?;
         Ok(Gain::from_be_bytes(bytes))
@@ -370,7 +369,7 @@ where
     ///
     /// # Errors
     /// Returns `Err` if there was an error during SPI communication
-    pub fn set_gain(&mut self, gain: Gain) -> Result<(), Error<IntfError>> {
+    pub fn set_gain(&mut self, gain: Gain) -> Result<(), Error> {
         self.write_all_regs(registers::GAIN_ADDR, &gain.to_be_bytes())
     }
 
@@ -378,7 +377,7 @@ where
     ///
     /// # Errors
     /// Returns `Err` if there was an error during SPI communication
-    pub fn get_config(&mut self) -> Result<Config, Error<IntfError>> {
+    pub fn get_config(&mut self) -> Result<Config, Error> {
         let mut bytes = [0u8; 2];
         self.read_regs(registers::CFG_ADDR, &mut bytes)?;
         Ok(Config::from_be_bytes(bytes))
@@ -388,7 +387,7 @@ where
     ///
     /// # Errors
     /// Returns `Err` if there was an error during SPI communication
-    pub fn set_config(&mut self, gain: Config) -> Result<(), Error<IntfError>> {
+    pub fn set_config(&mut self, gain: Config) -> Result<(), Error> {
         self.write_all_regs(registers::CFG_ADDR, &gain.to_be_bytes())
     }
 
@@ -396,7 +395,7 @@ where
     ///
     /// # Errors
     /// Returns `Err` if there was an error during SPI communication
-    pub fn get_threshold(&mut self) -> Result<Threshold, Error<IntfError>> {
+    pub fn get_threshold(&mut self) -> Result<Threshold, Error> {
         // Ensure registers are contiguous
         const_assert_eq!(registers::THRSHLD_MSB_ADDR + 1, registers::THRSHLD_LSB_ADDR);
         // This macro doesn't "use" these variables, so we need to fake it
@@ -411,7 +410,7 @@ where
     ///
     /// # Errors
     /// Returns `Err` if there was an error during SPI communication
-    pub fn set_threshold(&mut self, threshold: Threshold) -> Result<(), Error<IntfError>> {
+    pub fn set_threshold(&mut self, threshold: Threshold) -> Result<(), Error> {
         // Ensure registers are contiguous
         const_assert_eq!(registers::THRSHLD_MSB_ADDR + 1, registers::THRSHLD_LSB_ADDR);
         // This macro doesn't "use" these variables, so we need to fake it
@@ -420,7 +419,7 @@ where
         self.write_all_regs(registers::THRSHLD_MSB_ADDR, &threshold.to_be_bytes())
     }
 
-    fn new(intf: Intf, mode: Mode) -> Self {
+    fn new(intf: I, mode: Mode) -> Self {
         let mut driver = Self {
             intf,
             read_buf: [0; BUF_SIZE],
@@ -429,7 +428,6 @@ where
             word_len: 2,
             word_packing: WordLength::Bits16,
             spi_crc_enable: false,
-            e: PhantomData,
             w: PhantomData,
         };
         driver.process_new_mode(mode);
@@ -459,7 +457,7 @@ where
     fn send_simple_command(
         &mut self,
         command: Command,
-    ) -> Result<([u8; 2], [[u8; 3]; CHANNELS]), Error<IntfError>> {
+    ) -> Result<([u8; 2], [[u8; 3]; CHANNELS]), Error> {
         let mut bytes_written = 0;
 
         // Commands are always 2 bytes
@@ -489,7 +487,7 @@ where
         command_len: usize,
         read_len: usize,
         check_resp_crc: bool,
-    ) -> Result<(), Error<IntfError>> {
+    ) -> Result<(), Error> {
         let mut crc_len = 0;
 
         if self.spi_crc_enable {
@@ -559,30 +557,29 @@ where
 }
 
 #[doc(hidden)]
-pub trait RegisterAccess<IntfError> {
+pub trait RegisterAccess {
     /// Read some device registers
     /// Currently only reading 1 or 2 registers is supported
     /// Panics if `buf` is not 2 or 4 in length
-    fn read_regs(&mut self, address: u8, buf: &mut [u8]) -> Result<(), Error<IntfError>>;
+    fn read_regs(&mut self, address: u8, buf: &mut [u8]) -> Result<(), Error>;
     /// Write some device registers
     /// Currently only writing 1 or 2 registers is supported
     /// Returns the number of registers actually written
     /// Panics if `buf` is not 2 or 4 in length
-    fn write_regs(&mut self, address: u8, buf: &[u8]) -> Result<usize, Error<IntfError>>;
+    fn write_regs(&mut self, address: u8, buf: &[u8]) -> Result<usize, Error>;
     /// Write the entire buf to device registers
     /// Currently only writing 1 or 2 registers is supported
     /// Panics if `buf` is not 2 or 4 in length
-    fn write_all_regs(&mut self, address: u8, buf: &[u8]) -> Result<(), Error<IntfError>>;
+    fn write_all_regs(&mut self, address: u8, buf: &[u8]) -> Result<(), Error>;
 }
 
-impl<Intf, IntfError, IntfWord, const CHANNELS: usize> RegisterAccess<IntfError>
-    for Ads131m<Intf, IntfError, IntfWord, CHANNELS>
+impl<I, W, const CHANNELS: usize> RegisterAccess for Ads131m<I, W, CHANNELS>
 where
-    Intf: Interface<IntfError, IntfWord>,
-    IntfWord: Copy,
+    I: Interface<W>,
+    W: Copy,
 {
     #[allow(clippy::cast_possible_truncation, clippy::identity_op)]
-    fn read_regs(&mut self, address: u8, buf: &mut [u8]) -> Result<(), Error<IntfError>> {
+    fn read_regs(&mut self, address: u8, buf: &mut [u8]) -> Result<(), Error> {
         let reg_count = buf.len() / 2;
         assert!(reg_count > 0 && reg_count < 3);
 
@@ -656,7 +653,7 @@ where
 
     // Returns the number of registers actually written
     #[allow(clippy::cast_possible_truncation, clippy::identity_op)]
-    fn write_regs(&mut self, address: u8, buf: &[u8]) -> Result<usize, Error<IntfError>> {
+    fn write_regs(&mut self, address: u8, buf: &[u8]) -> Result<usize, Error> {
         let reg_count = buf.len() / 2;
         assert!(reg_count > 0 && reg_count < 3);
 
@@ -718,7 +715,7 @@ where
         Ok(usize::from(resp[1] & 0x7F))
     }
 
-    fn write_all_regs(&mut self, address: u8, buf: &[u8]) -> Result<(), Error<IntfError>> {
+    fn write_all_regs(&mut self, address: u8, buf: &[u8]) -> Result<(), Error> {
         let reg_count = buf.len() / 2;
         assert!(reg_count > 0 && reg_count < 3);
 
