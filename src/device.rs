@@ -11,7 +11,7 @@ use crate::types::{
 use crate::Error;
 use concat_idents::concat_idents;
 use crc::{Crc, CRC_16_CMS, CRC_16_IBM_3740};
-use ringbuffer::{ConstGenericRingBuffer, RingBuffer, RingBufferExt, RingBufferWrite};
+use ringbuffer::{ConstGenericRingBuffer, RingBuffer, RingBufferRead, RingBufferWrite};
 use static_assertions::const_assert_eq;
 use ux::i24;
 
@@ -174,8 +174,10 @@ macro_rules! impl_model {
                     "Initialize a TI [`ADS131M0",
                     $channel_count,
                     "`] ADC driver from an [`embedded-hal`] SPI interface\n\n",
+                    "# Notes\n",
                     "The SPI interface must be configured for SPI mode 1\n\n",
                     "The device must have it's `MODE` register in the default (reset) state\n\n",
+                    "`BUFSIZE` should be a power of two, or performance could be significantly slower.\n\n",
                     "[`ADS131M0",
                     $channel_count,
                     "`]: https://www.ti.com/lit/ds/symlink/ads131m0",
@@ -192,8 +194,10 @@ macro_rules! impl_model {
                     "Initialize a TI [`ADS131M0",
                     $channel_count,
                     "`] ADC driver from an [`embedded-hal`] SPI interface with a custom configuration\n\n",
+                    "# Notes\n",
                     "The SPI interface must be configured for SPI mode 1\n\n",
                     "The current state of the device's `MODE` register must match the `mode` argument\n\n",
+                    "`BUFSIZE` should be a power of two, or performance could be significantly slower.\n\n",
                     "[`ADS131M0",
                     $channel_count,
                     "`]: https://www.ti.com/lit/ds/symlink/ads131m0",
@@ -281,6 +285,7 @@ pub struct Ads131m<I: Interface<W>, W: Copy, const BUFSIZE: usize, const CHANNEL
     write_buf: [u8; BUF_SIZE],
     // Samples
     sample_buf: ConstGenericRingBuffer<SampleGrab<CHANNELS>, BUFSIZE>,
+    sample_drop_count: usize,
     // Mode
     crc_table: Crc<u16>,
     word_len: usize,
@@ -295,6 +300,26 @@ where
     I: Interface<W>,
     W: Copy,
 {
+    /// Get the number of sample grabs available
+    pub fn sample_grab_count(&self) -> usize {
+        self.sample_buf.len()
+    }
+
+    /// Get the number of sample grabs that overflowed the sample buffer
+    pub const fn sample_grab_overflow_count(&self) -> usize {
+        self.sample_drop_count
+    }
+
+    /// Reset the count of sample grabs that overflowed the sample buffer
+    pub fn reset_grab_overflow_count(&mut self) {
+        self.sample_drop_count = 0;
+    }
+
+    /// Get a sample grab from the buffer
+    pub fn dequeue_sample_grab(&mut self) -> Option<SampleGrab<CHANNELS>> {
+        self.sample_buf.dequeue()
+    }
+
     /// Reset the device to it's default state.
     ///
     /// The device must not be used again for 5us while the registers stabilize
@@ -304,8 +329,7 @@ where
     /// # Errors
     /// Returns `Err` if there was an error during SPI communication
     pub fn reset(&mut self) -> Result<(), Error> {
-        // TODO: Do something with these samples
-        let (_, samples) = self.send_simple_command(Command::Reset)?;
+        let _ = self.send_simple_command(Command::Reset)?;
         self.process_new_mode(Mode::default());
         Ok(())
     }
@@ -317,9 +341,8 @@ where
     /// # Errors
     /// Returns `Err` if there was an error during SPI communication
     pub fn standby(&mut self) -> Result<(), Error> {
-        // TODO: Do something with these samples
-        let (_, samples_1) = self.send_simple_command(Command::Standby)?;
-        let (resp, samples_2) = self.send_simple_command(Command::Null)?;
+        let _ = self.send_simple_command(Command::Standby)?;
+        let resp = self.send_simple_command(Command::Null)?;
         match Response::try_from_be_bytes(resp) {
             Some(Response::Standby) => Ok(()),
             _ => Err(Error::UnexpectedResponse(Some(resp))),
@@ -332,9 +355,8 @@ where
     /// # Errors
     /// Returns `Err` if there was an error during SPI communication
     pub fn wakeup(&mut self) -> Result<(), Error> {
-        // TODO: Do something with these samples
-        let (_, samples_1) = self.send_simple_command(Command::Wakeup)?;
-        let (resp, samples_2) = self.send_simple_command(Command::Null)?;
+        let _ = self.send_simple_command(Command::Wakeup)?;
+        let resp = self.send_simple_command(Command::Null)?;
         match Response::try_from_be_bytes(resp) {
             Some(Response::Wakeup) => Ok(()),
             _ => Err(Error::UnexpectedResponse(Some(resp))),
@@ -346,9 +368,8 @@ where
     /// # Errors
     /// Returns `Err` if there was an error during SPI communication
     pub fn lock(&mut self) -> Result<(), Error> {
-        // TODO: Do something with these samples
-        let (_, samples_1) = self.send_simple_command(Command::Lock)?;
-        let (resp, samples_2) = self.send_simple_command(Command::Null)?;
+        let _ = self.send_simple_command(Command::Lock)?;
+        let resp = self.send_simple_command(Command::Null)?;
         match Response::try_from_be_bytes(resp) {
             Some(Response::Lock) => Ok(()),
             _ => Err(Error::UnexpectedResponse(Some(resp))),
@@ -360,9 +381,8 @@ where
     /// # Errors
     /// Returns `Err` if there was an error during SPI communication
     pub fn unlock(&mut self) -> Result<(), Error> {
-        // TODO: Do something with these samples
-        let (_, samples_1) = self.send_simple_command(Command::Unlock)?;
-        let (resp, samples_2) = self.send_simple_command(Command::Null)?;
+        let _ = self.send_simple_command(Command::Unlock)?;
+        let resp = self.send_simple_command(Command::Null)?;
         match Response::try_from_be_bytes(resp) {
             Some(Response::Unlock) => Ok(()),
             _ => Err(Error::UnexpectedResponse(Some(resp))),
@@ -505,6 +525,7 @@ where
             read_buf: [0; BUF_SIZE],
             write_buf: [0; BUF_SIZE],
             sample_buf: ConstGenericRingBuffer::new(),
+            sample_drop_count: 0,
             crc_table: Crc::<u16>::new(&CRC_16_CMS),
             word_len: 2,
             word_packing: WordLength::Bits16,
@@ -535,10 +556,7 @@ where
     }
 
     #[allow(clippy::identity_op)]
-    fn send_simple_command(
-        &mut self,
-        command: Command,
-    ) -> Result<([u8; 2], [[u8; 3]; CHANNELS]), Error> {
+    fn send_simple_command(&mut self, command: Command) -> Result<[u8; 2], Error> {
         let mut bytes_written = 0;
 
         // Commands are always 2 bytes
@@ -555,10 +573,11 @@ where
 
         // Responses are always 2 bytes
         let response: [u8; 2] = self.read_buf[..2].try_into().unwrap();
-        let sample_data =
+        let samples =
             self.decode_samples(&self.read_buf[self.word_len * 1..self.word_len * (CHANNELS + 1)]);
+        self.enqueue_sample_grab(samples);
 
-        Ok((response, sample_data))
+        Ok(response)
     }
 
     /// Exchange a single SPI frame with the ADC
@@ -614,11 +633,10 @@ where
         Ok(())
     }
 
-    /// TODO: This should probably return a more rich type
     /// Panics if `buf` is not `self.word_len` * `CHANNELS` in length
-    fn decode_samples(&self, buf: &[u8]) -> [[u8; 3]; CHANNELS] {
-        let mut sample_data = [[0; 3]; CHANNELS];
-        for (channel, sample) in sample_data.iter_mut().enumerate() {
+    fn decode_samples(&self, buf: &[u8]) -> SampleGrab<CHANNELS> {
+        let mut data = [[0; 3]; CHANNELS];
+        for (channel, sample) in data.iter_mut().enumerate() {
             let word_idx = channel * self.word_len;
             match self.word_packing {
                 WordLength::Bits16 => {
@@ -633,7 +651,14 @@ where
             };
         }
 
-        sample_data
+        SampleGrab { data }
+    }
+
+    fn enqueue_sample_grab(&mut self, sample: SampleGrab<CHANNELS>) {
+        if self.sample_buf.is_full() {
+            self.sample_drop_count = self.sample_drop_count.saturating_add(1);
+        }
+        self.sample_buf.enqueue(sample);
     }
 }
 
@@ -684,9 +709,9 @@ where
         self.transfer_frame(bytes_written, read_len, true)?;
 
         // Ignore response
-        // TODO: Do something with these samples
-        let samples_1 =
+        let samples =
             self.decode_samples(&self.read_buf[self.word_len * 1..self.word_len * (CHANNELS + 1)]);
+        self.enqueue_sample_grab(samples);
 
         // Fetch data
         self.write_buf[0..2].copy_from_slice(&Command::Null.to_be_bytes());
@@ -707,9 +732,10 @@ where
         match reg_count {
             1 => {
                 buf[0..2].copy_from_slice(&self.read_buf[0..2]);
-                let samples_2 = self.decode_samples(
+                let samples = self.decode_samples(
                     &self.read_buf[self.word_len * 1..self.word_len * (CHANNELS + 1)],
                 );
+                self.enqueue_sample_grab(samples);
             }
             n => {
                 if self.read_buf[0] != request_bytes[0] | 0x40
@@ -769,9 +795,9 @@ where
         self.transfer_frame(bytes_written, read_len, true)?;
 
         // Ignore response
-        // TODO: Do something with these samples
-        let samples_1 =
+        let samples =
             self.decode_samples(&self.read_buf[self.word_len * 1..self.word_len * (CHANNELS + 1)]);
+        self.enqueue_sample_grab(samples);
 
         // Fetch data
         self.write_buf[0..2].copy_from_slice(&Command::Null.to_be_bytes());
@@ -785,10 +811,10 @@ where
         let read_len = (1 + CHANNELS) * self.word_len;
         self.transfer_frame(bytes_written, read_len, true)?;
 
-        let resp = &self.read_buf[0..2];
-        // TODO: Do something with these samples
-        let samples_2 =
+        let samples =
             self.decode_samples(&self.read_buf[self.word_len..self.word_len * (CHANNELS + 1)]);
+        self.enqueue_sample_grab(samples);
+        let resp = &self.read_buf[0..2];
 
         if resp[0] != 0x40 | address >> 1 || resp[1] & 0x80 != address << 7 {
             return Err(Error::UnexpectedResponse(Some(resp.try_into().unwrap())));
