@@ -519,6 +519,16 @@ where
         self.write_all_regs(registers::THRSHLD_MSB_ADDR, &threshold.to_be_bytes())
     }
 
+    /// Read the `REGMAP_CRC` register
+    ///
+    /// # Errors
+    /// Returns `Err` if there was an error during SPI communication
+    pub fn get_reg_map_crc(&mut self) -> Result<u16, Error> {
+        let mut bytes = [0u8; 2];
+        self.read_regs(registers::REGMAP_CRC_ADDR, &mut bytes)?;
+        Ok(u16::from_be_bytes(bytes))
+    }
+
     fn new(intf: I, mode: Mode) -> Self {
         let mut driver = Self {
             intf,
