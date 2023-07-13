@@ -10,6 +10,202 @@ macro_rules! is_bit_set {
     };
 }
 
+/// An ADC channel
+#[derive(Debug, PartialEq, Eq, Clone, Copy, IntoPrimitive)]
+#[repr(u8)]
+pub enum Channel {
+    /// ADC channel 0
+    ///
+    /// This channel is available on all ADS131M models
+    Zero,
+    /// ADC channel 1
+    ///
+    /// This channel is available on all ADS131M models
+    One,
+    /// ADC channel 2
+    ///
+    /// This channel is available on the following ADS131M models:
+    /// - ADS131M03
+    /// - ADS131M04
+    /// - ADS131M06
+    /// - ADS131M08
+    Two,
+    /// ADC channel 3
+    ///
+    /// This channel is available on the following ADS131M models:
+    /// - ADS131M04
+    /// - ADS131M06
+    /// - ADS131M08
+    Three,
+    /// ADC channel 4
+    ///
+    /// This channel is available on the following ADS131M models:
+    /// - ADS131M06
+    /// - ADS131M08
+    Four,
+    /// ADC channel 5
+    ///
+    /// This channel is available on the following ADS131M models:
+    /// - ADS131M06
+    /// - ADS131M08
+    Five,
+    /// ADC channel 6
+    ///
+    /// This channel is available on the following ADS131M models:
+    /// - ADS131M08
+    Six,
+    /// ADC channel 7
+    ///
+    /// This channel is available on the following ADS131M models:
+    /// - ADS131M08
+    Seven,
+}
+
+/// An address for an ADC register
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum Address {
+    /// The device `ID` register
+    Id,
+    /// The device `STATUS` register
+    Status,
+    /// The device `MODE` register
+    Mode,
+    /// The device `CLOCK` register
+    Clock,
+    /// The device `GAIN` register
+    Gain,
+    /// The device `CFG` register
+    Config,
+    /// The device `THRSHLD_MSB` register
+    ThresholdMsb,
+    /// The device `THRSHLD_LSB` register
+    ThresholdLsb,
+    /// The device `CH*_CFG` register
+    ChannelConfig(Channel),
+    /// The device `CH*_OCAL_MSB` register
+    ChannelOffsetCalMsb(Channel),
+    /// The device `CH*_OCAL_LSB` register
+    ChannelOffsetCalLsb(Channel),
+    /// The device `CH*_GCAL_MSB` register
+    ChannelGainCalMsb(Channel),
+    /// The device `CH*_GCAL_LSB` register
+    ChannelGainCalLsb(Channel),
+    /// The device `REGMAP_CRC` register
+    RegisterMapCrc,
+}
+
+impl Address {
+    /// Get the address value for this `RegisterAddress`, if the channel is valid
+    pub(crate) const fn address(self) -> u8 {
+        match self {
+            Self::Id => 0x0,
+            Self::Status => 0x1,
+            Self::Mode => 0x2,
+            Self::Clock => 0x3,
+            Self::Gain => 0x4,
+            Self::Config => 0x6,
+            Self::ThresholdMsb => 0x7,
+            Self::ThresholdLsb => 0x8,
+            Self::ChannelConfig(Channel::Zero) => 0x9,
+            Self::ChannelOffsetCalMsb(Channel::Zero) => 0xA,
+            Self::ChannelOffsetCalLsb(Channel::Zero) => 0xB,
+            Self::ChannelGainCalMsb(Channel::Zero) => 0xC,
+            Self::ChannelGainCalLsb(Channel::Zero) => 0xD,
+            Self::ChannelConfig(Channel::One) => 0xE,
+            Self::ChannelOffsetCalMsb(Channel::One) => 0xF,
+            Self::ChannelOffsetCalLsb(Channel::One) => 0x10,
+            Self::ChannelGainCalMsb(Channel::One) => 0x11,
+            Self::ChannelGainCalLsb(Channel::One) => 0x12,
+            Self::ChannelConfig(Channel::Two) => 0x13,
+            Self::ChannelOffsetCalMsb(Channel::Two) => 0x14,
+            Self::ChannelOffsetCalLsb(Channel::Two) => 0x15,
+            Self::ChannelGainCalMsb(Channel::Two) => 0x16,
+            Self::ChannelGainCalLsb(Channel::Two) => 0x17,
+            Self::ChannelConfig(Channel::Three) => 0x18,
+            Self::ChannelOffsetCalMsb(Channel::Three) => 0x19,
+            Self::ChannelOffsetCalLsb(Channel::Three) => 0x1A,
+            Self::ChannelGainCalMsb(Channel::Three) => 0x1B,
+            Self::ChannelGainCalLsb(Channel::Three) => 0x1C,
+            Self::ChannelConfig(Channel::Four) => 0x1D,
+            Self::ChannelOffsetCalMsb(Channel::Four) => 0x1E,
+            Self::ChannelOffsetCalLsb(Channel::Four) => 0x1F,
+            Self::ChannelGainCalMsb(Channel::Four) => 0x20,
+            Self::ChannelGainCalLsb(Channel::Four) => 0x21,
+            Self::ChannelConfig(Channel::Five) => 0x22,
+            Self::ChannelOffsetCalMsb(Channel::Five) => 0x23,
+            Self::ChannelOffsetCalLsb(Channel::Five) => 0x24,
+            Self::ChannelGainCalMsb(Channel::Five) => 0x25,
+            Self::ChannelGainCalLsb(Channel::Five) => 0x26,
+            Self::ChannelConfig(Channel::Six) => 0x27,
+            Self::ChannelOffsetCalMsb(Channel::Six) => 0x28,
+            Self::ChannelOffsetCalLsb(Channel::Six) => 0x29,
+            Self::ChannelGainCalMsb(Channel::Six) => 0x2A,
+            Self::ChannelGainCalLsb(Channel::Six) => 0x2B,
+            Self::ChannelConfig(Channel::Seven) => 0x2C,
+            Self::ChannelOffsetCalMsb(Channel::Seven) => 0x2D,
+            Self::ChannelOffsetCalLsb(Channel::Seven) => 0x2E,
+            Self::ChannelGainCalMsb(Channel::Seven) => 0x2F,
+            Self::ChannelGainCalLsb(Channel::Seven) => 0x30,
+            Self::RegisterMapCrc => 0x3E,
+        }
+    }
+
+    /// Get the channel for the register, if applicable
+    pub(crate) const fn channel(self) -> Option<Channel> {
+        match self {
+            Self::ChannelConfig(n)
+            | Self::ChannelOffsetCalMsb(n)
+            | Self::ChannelOffsetCalLsb(n)
+            | Self::ChannelGainCalMsb(n)
+            | Self::ChannelGainCalLsb(n) => Some(n),
+            _ => None,
+        }
+    }
+}
+
+/// A global device register
+pub trait Global
+where
+    Self: Clone + Copy + PartialEq + Eq,
+{
+    /// The memory address of the register
+    const ADDRESS: Address;
+
+    /// Unpack a register value from it's byte representation
+    ///
+    /// Words must be MSB first
+    #[must_use]
+    fn from_be_bytes(bytes: [u8; 2]) -> Self;
+
+    /// Pack a register value to it's byte representation
+    ///
+    /// Words are MSB first
+    #[must_use]
+    fn to_be_bytes(self) -> [u8; 2];
+}
+
+/// A channel-specific device register
+pub trait ChannelSpecific
+where
+    Self: Clone + Copy + PartialEq + Eq,
+{
+    /// The memory address of the register for a given chanel
+    #[must_use]
+    fn address_for_channel(channel: Channel) -> Address;
+
+    /// Unpack a register value from it's byte representation
+    ///
+    /// Words must be MSB first
+    #[must_use]
+    fn from_be_bytes(bytes: [u8; 2]) -> Self;
+
+    /// Pack a register value to it's byte representation
+    ///
+    /// Words are MSB first
+    #[must_use]
+    fn to_be_bytes(self) -> [u8; 2];
+}
+
 /// SPI Word size configuration
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive, Sequence)]
 #[repr(u8)]
@@ -28,6 +224,16 @@ pub enum WordLength {
 
     /// 32-bit words with the sign extension for 24-bit ADC data
     Bits32Signed = 3,
+}
+
+impl WordLength {
+    pub(crate) const fn byte_count(self) -> usize {
+        match self {
+            Self::Bits16 => 2,
+            Self::Bits24 => 3,
+            _ => 4,
+        }
+    }
 }
 
 /// CRC implementation used for device communication
@@ -388,22 +594,31 @@ pub enum ChannelMux {
 }
 
 /// Device `ID` register
+///
+/// This register is read only. Writing to it has no effect
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Id {
-    channel_count: u4,
+    /// Channel count
+    pub channel_count: u4,
 }
 
-impl Id {
-    /// Decode a `Status` from it's register bytes
-    #[must_use]
-    pub const fn from_be_bytes(bytes: [u8; 2]) -> Self {
+impl Global for Id {
+    const ADDRESS: Address = Address::Id;
+
+    fn from_be_bytes(bytes: [u8; 2]) -> Self {
         Self {
             channel_count: u4::new(bytes[0] & 0b1111),
         }
     }
+
+    fn to_be_bytes(self) -> [u8; 2] {
+        [u8::from(self.channel_count), 0]
+    }
 }
 
 /// Device `STATUS` register
+///
+/// This register is read only. Writing to it has no effect
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(clippy::struct_excessive_bools)]
 pub struct Status {
@@ -442,11 +657,10 @@ pub struct Status {
     pub drdy3: bool,
 }
 
-impl Status {
-    /// Decode a `Status` from it's register bytes
-    #[must_use]
-    #[allow(clippy::missing_panics_doc)]
-    pub fn from_be_bytes(bytes: [u8; 2]) -> Self {
+impl Global for Status {
+    const ADDRESS: Address = Address::Status;
+
+    fn from_be_bytes(bytes: [u8; 2]) -> Self {
         Self {
             lock: is_bit_set!(bytes[0], 7),
             resync: is_bit_set!(bytes[0], 6),
@@ -455,11 +669,27 @@ impl Status {
             crc_type: CrcType::try_from((bytes[0] >> 3) & 0b1).unwrap(),
             reset: is_bit_set!(bytes[0], 2),
             word_length: WordLength::try_from(bytes[0] & 0b11).unwrap(),
-            drdy0: is_bit_set!(bytes[1], 0),
-            drdy1: is_bit_set!(bytes[1], 1),
-            drdy2: is_bit_set!(bytes[1], 2),
             drdy3: is_bit_set!(bytes[1], 3),
+            drdy2: is_bit_set!(bytes[1], 2),
+            drdy1: is_bit_set!(bytes[1], 1),
+            drdy0: is_bit_set!(bytes[1], 0),
         }
+    }
+
+    fn to_be_bytes(self) -> [u8; 2] {
+        [
+            u8::from(self.lock) << 7
+                | u8::from(self.resync) << 6
+                | u8::from(self.reg_map_crc_err) << 5
+                | u8::from(self.spi_crc_err) << 4
+                | u8::from(self.crc_type) << 3
+                | u8::from(self.reset) << 2
+                | u8::from(self.word_length),
+            u8::from(self.drdy3) << 3
+                | u8::from(self.drdy2) << 2
+                | u8::from(self.drdy1) << 1
+                | u8::from(self.drdy0),
+        ]
     }
 }
 
@@ -514,11 +744,10 @@ pub struct Mode {
     pub drdy_ready_state: DrdyReadyState,
 }
 
-impl Mode {
-    /// Decode a `Mode` from it's register bytes
-    #[must_use]
-    #[allow(clippy::missing_panics_doc)]
-    pub fn from_be_bytes(bytes: [u8; 2]) -> Self {
+impl Global for Mode {
+    const ADDRESS: Address = Address::Mode;
+
+    fn from_be_bytes(bytes: [u8; 2]) -> Self {
         Self {
             reg_crc_enable: is_bit_set!(bytes[0], 5),
             spi_crc_enable: is_bit_set!(bytes[0], 4),
@@ -532,9 +761,7 @@ impl Mode {
         }
     }
 
-    /// Returns the register bytes for this `Mode` configuration
-    #[must_use]
-    pub fn to_be_bytes(&self) -> [u8; 2] {
+    fn to_be_bytes(self) -> [u8; 2] {
         [
             u8::from(self.reg_crc_enable) << 5
                 | u8::from(self.spi_crc_enable) << 4
@@ -588,11 +815,10 @@ pub struct Clock {
     pub power_mode: PowerMode,
 }
 
-impl Clock {
-    /// Decode a `Clock` from it's register bytes
-    #[must_use]
-    #[allow(clippy::missing_panics_doc)]
-    pub fn from_be_bytes(bytes: [u8; 2]) -> Self {
+impl Global for Clock {
+    const ADDRESS: Address = Address::Clock;
+
+    fn from_be_bytes(bytes: [u8; 2]) -> Self {
         Self {
             channel0_en: is_bit_set!(bytes[0], 0),
             channel1_en: is_bit_set!(bytes[0], 1),
@@ -603,9 +829,7 @@ impl Clock {
         }
     }
 
-    /// Returns the register bytes for this `Clock` configuration
-    #[must_use]
-    pub fn to_be_bytes(&self) -> [u8; 2] {
+    fn to_be_bytes(self) -> [u8; 2] {
         [
             u8::from(self.channel3_en) << 3
                 | u8::from(self.channel2_en) << 2
@@ -645,11 +869,10 @@ pub struct Gain {
     pub pga_gain3: PgaGain,
 }
 
-impl Gain {
-    /// Decode a `Gain` from it's register bytes
-    #[must_use]
-    #[allow(clippy::missing_panics_doc)]
-    pub fn from_be_bytes(bytes: [u8; 2]) -> Self {
+impl Global for Gain {
+    const ADDRESS: Address = Address::Gain;
+
+    fn from_be_bytes(bytes: [u8; 2]) -> Self {
         Self {
             pga_gain2: PgaGain::try_from(bytes[0] & 0b111).unwrap(),
             pga_gain3: PgaGain::try_from((bytes[0] >> 4) & 0b111).unwrap(),
@@ -658,9 +881,7 @@ impl Gain {
         }
     }
 
-    /// Returns the register bytes for this `Gain` configuration
-    #[must_use]
-    pub fn to_be_bytes(&self) -> [u8; 2] {
+    fn to_be_bytes(self) -> [u8; 2] {
         [
             u8::from(self.pga_gain2) | u8::from(self.pga_gain3) << 4,
             u8::from(self.pga_gain0) | u8::from(self.pga_gain1) << 4,
@@ -691,11 +912,10 @@ pub struct Config {
     pub current_detect_enable: bool,
 }
 
-impl Config {
-    /// Decode a `Config` from it's register bytes
-    #[must_use]
-    #[allow(clippy::missing_panics_doc)]
-    pub fn from_be_bytes(bytes: [u8; 2]) -> Self {
+impl Global for Config {
+    const ADDRESS: Address = Address::Config;
+
+    fn from_be_bytes(bytes: [u8; 2]) -> Self {
         Self {
             global_chop_delay: GlobalChopDelay::try_from((bytes[0] >> 1) & 0b1111).unwrap(),
             global_chop_enable: is_bit_set!(bytes[0], 0),
@@ -707,9 +927,7 @@ impl Config {
         }
     }
 
-    /// Returns the register bytes for this `Config` configuration
-    #[must_use]
-    pub fn to_be_bytes(&self) -> [u8; 2] {
+    fn to_be_bytes(self) -> [u8; 2] {
         [
             u8::from(self.global_chop_delay) << 1 | u8::from(self.global_chop_enable),
             u8::from(self.current_detect_channels) << 7
@@ -731,34 +949,76 @@ pub struct Threshold {
 }
 
 impl Threshold {
-    /// Decode a `Threshold` from it's register bytes
-    ///
-    /// Words must be MSB first
-    #[must_use]
-    #[allow(clippy::missing_panics_doc)]
-    pub fn from_be_bytes(bytes: [u8; 4]) -> Self {
-        Self {
-            current_detect_threshold: u24::from(bytes[0]) << 16
-                | u24::from(bytes[1]) << 8
-                | u24::from(bytes[2]),
-            dc_block: DcBlock::try_from(bytes[3] & 0b1111).unwrap(),
-        }
-    }
-
-    /// Returns the register bytes for this `Threshold` configuration
-    ///
-    /// Words are MSB first
+    /// Split this into the two [`Global`] halves that make up this `Threshold`
     #[must_use]
     #[allow(clippy::cast_possible_truncation)]
-    pub fn to_be_bytes(&self) -> [u8; 4] {
+    pub fn into_parts(self) -> (ThresholdMsb, ThresholdLsb) {
         let threshold = u32::from(self.current_detect_threshold);
 
-        [
-            (threshold >> 16) as u8,
-            (threshold >> 8) as u8,
-            threshold as u8,
-            u8::from(self.dc_block),
-        ]
+        (
+            ThresholdMsb {
+                bytes: [(threshold >> 16) as u8, (threshold >> 8) as u8],
+            },
+            ThresholdLsb {
+                bytes: [threshold as u8, u8::from(self.dc_block)],
+            },
+        )
+    }
+
+    /// Build a `Threshold` from it's two [`Global`] halves
+    #[must_use]
+    #[allow(
+        clippy::missing_panics_doc,
+        clippy::needless_pass_by_value,
+        clippy::similar_names
+    )]
+    pub fn from_parts(msb: ThresholdMsb, lsb: ThresholdLsb) -> Self {
+        Self {
+            current_detect_threshold: u24::from(msb.bytes[0]) << 16
+                | u24::from(msb.bytes[1]) << 8
+                | u24::from(lsb.bytes[0]),
+            dc_block: DcBlock::try_from(lsb.bytes[1] & 0b1111).unwrap(),
+        }
+    }
+}
+
+/// Device `THRSHLD_MSB` register
+///
+/// This is only one half of a [`Threshold`], use [`Threshold::from_parts`] to combine the two halves
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct ThresholdMsb {
+    bytes: [u8; 2],
+}
+
+impl Global for ThresholdMsb {
+    const ADDRESS: Address = Address::ThresholdMsb;
+
+    fn from_be_bytes(bytes: [u8; 2]) -> Self {
+        Self { bytes }
+    }
+
+    fn to_be_bytes(self) -> [u8; 2] {
+        self.bytes
+    }
+}
+
+/// Device `THRSHLD_LSB` register
+///
+/// This is only one half of a [`Threshold`], use [`Threshold::from_parts`] to combine the two halves
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct ThresholdLsb {
+    bytes: [u8; 2],
+}
+
+impl Global for ThresholdLsb {
+    const ADDRESS: Address = Address::ThresholdLsb;
+
+    fn from_be_bytes(bytes: [u8; 2]) -> Self {
+        Self { bytes }
+    }
+
+    fn to_be_bytes(self) -> [u8; 2] {
+        self.bytes
     }
 }
 
@@ -766,20 +1026,21 @@ impl Threshold {
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ChannelConfig {
     /// Channel 0 phase delay in modulator clock cycles
-    phase: u10,
+    pub phase: u10,
 
     /// DC block filter for channel 0 disable
-    dc_block_disable: bool,
+    pub dc_block_disable: bool,
 
     /// Channel 0 input selection
-    mux: ChannelMux,
+    pub mux: ChannelMux,
 }
 
-impl ChannelConfig {
-    /// Decode a `ChannelConfig` from it's register bytes
-    #[must_use]
-    #[allow(clippy::missing_panics_doc)]
-    pub fn from_be_bytes(bytes: [u8; 2]) -> Self {
+impl ChannelSpecific for ChannelConfig {
+    fn address_for_channel(channel: Channel) -> Address {
+        Address::ChannelConfig(channel)
+    }
+
+    fn from_be_bytes(bytes: [u8; 2]) -> Self {
         Self {
             phase: u10::from(bytes[0]) << 2 | u10::from(bytes[1] >> 6),
             dc_block_disable: is_bit_set!(bytes[1], 2),
@@ -787,10 +1048,8 @@ impl ChannelConfig {
         }
     }
 
-    /// Returns the register bytes for this `ChannelConfig`
-    #[must_use]
     #[allow(clippy::cast_possible_truncation)]
-    pub fn to_be_bytes(&self) -> [u8; 2] {
+    fn to_be_bytes(self) -> [u8; 2] {
         let phase = u16::from(self.phase);
         [
             (phase >> 2) as u8,
@@ -801,155 +1060,206 @@ impl ChannelConfig {
 
 /// Device `CHx_OCAL_MSB` and `CHx_OCAL_LSB` registers
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OffsetCal {
+pub struct ChannelOffsetCal {
     /// Channel offset calibration
     pub offset: u24,
 }
 
-impl OffsetCal {
-    /// Decode an `OffsetCal` from it's register bytes
-    ///
-    /// Words must be MSB first
-    #[must_use]
-    pub fn from_be_bytes(bytes: [u8; 4]) -> Self {
-        Self {
-            offset: u24::from(bytes[0]) << 16 | u24::from(bytes[1]) << 8 | u24::from(bytes[2]),
-        }
-    }
-
-    /// Returns the register bytes for this `OffsetCal` configuration
-    ///
-    /// Words are MSB first
+impl ChannelOffsetCal {
+    /// Split this into the two [`ChannelSpecific`] halves that make up this `ChannelOffsetCal`
     #[must_use]
     #[allow(clippy::cast_possible_truncation)]
-    pub fn to_be_bytes(&self) -> [u8; 4] {
+    pub fn into_parts(self) -> (ChannelOffsetCalMsb, ChannelOffsetCalLsb) {
         let offset = u32::from(self.offset);
-        [(offset >> 16) as u8, (offset >> 8) as u8, offset as u8, 0]
+
+        (
+            ChannelOffsetCalMsb {
+                bytes: [(offset >> 16) as u8, (offset >> 8) as u8],
+            },
+            ChannelOffsetCalLsb {
+                bytes: [offset as u8, 0],
+            },
+        )
+    }
+
+    /// Build a `ChannelOffsetCal` from it's two [`ChannelSpecific`] halves
+    #[must_use]
+    #[allow(
+        clippy::missing_panics_doc,
+        clippy::needless_pass_by_value,
+        clippy::similar_names
+    )]
+    pub fn from_parts(msb: ChannelOffsetCalMsb, lsb: ChannelOffsetCalLsb) -> Self {
+        Self {
+            offset: u24::from(msb.bytes[0]) << 16
+                | u24::from(msb.bytes[1]) << 8
+                | u24::from(lsb.bytes[0]),
+        }
+    }
+}
+
+/// Device `CHx_OCAL_MSB` register
+///
+/// This is only one half of a [`ChannelOffsetCal`], use [`ChannelOffsetCal::from_parts`] to combine the two halves
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct ChannelOffsetCalMsb {
+    bytes: [u8; 2],
+}
+
+impl ChannelSpecific for ChannelOffsetCalMsb {
+    fn address_for_channel(channel: Channel) -> Address {
+        Address::ChannelOffsetCalMsb(channel)
+    }
+
+    fn from_be_bytes(bytes: [u8; 2]) -> Self {
+        Self { bytes }
+    }
+
+    fn to_be_bytes(self) -> [u8; 2] {
+        self.bytes
+    }
+}
+
+/// Device `CHx_OCAL_LSB` register
+///
+/// This is only one half of a [`ChannelOffsetCal`], use [`ChannelOffsetCal::from_parts`] to combine the two halves
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct ChannelOffsetCalLsb {
+    bytes: [u8; 2],
+}
+
+impl ChannelSpecific for ChannelOffsetCalLsb {
+    fn address_for_channel(channel: Channel) -> Address {
+        Address::ChannelOffsetCalLsb(channel)
+    }
+
+    fn from_be_bytes(bytes: [u8; 2]) -> Self {
+        Self { bytes }
+    }
+
+    fn to_be_bytes(self) -> [u8; 2] {
+        self.bytes
     }
 }
 
 /// Device `CHx_GCAL_MSB` and `CHx_GCAL_LSB` registers
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct GainCal {
+pub struct ChannelGainCal {
     /// Channel gain calibration
     pub gain: u24,
 }
 
-impl GainCal {
-    /// Decode an `GainCal` from it's register bytes
-    ///
-    /// Words must be MSB first
-    #[must_use]
-    pub fn from_be_bytes(bytes: [u8; 4]) -> Self {
-        Self {
-            gain: u24::from(bytes[0]) << 16 | u24::from(bytes[1]) << 8 | u24::from(bytes[2]),
-        }
-    }
-
-    /// Returns the register bytes for this `GainCal` configuration
-    ///
-    /// Words are MSB first
+impl ChannelGainCal {
+    /// Split this into the two [`ChannelSpecific`] halves that make up this `ChannelGainCal`
     #[must_use]
     #[allow(clippy::cast_possible_truncation)]
-    pub fn to_be_bytes(&self) -> [u8; 4] {
+    pub fn into_parts(self) -> (ChannelGainCalMsb, ChannelGainCalLsb) {
         let gain = u32::from(self.gain);
-        [(gain >> 16) as u8, (gain >> 8) as u8, gain as u8, 0]
+
+        (
+            ChannelGainCalMsb {
+                bytes: [(gain >> 16) as u8, (gain >> 8) as u8],
+            },
+            ChannelGainCalLsb {
+                bytes: [gain as u8, 0],
+            },
+        )
+    }
+
+    /// Build a `ChannelGainCal` from it's two [`ChannelSpecific`] halves
+    #[must_use]
+    #[allow(
+        clippy::missing_panics_doc,
+        clippy::needless_pass_by_value,
+        clippy::similar_names
+    )]
+    pub fn from_parts(msb: ChannelGainCalMsb, lsb: ChannelGainCalLsb) -> Self {
+        Self {
+            gain: u24::from(msb.bytes[0]) << 16
+                | u24::from(msb.bytes[1]) << 8
+                | u24::from(lsb.bytes[0]),
+        }
     }
 }
 
-impl Default for GainCal {
+impl Default for ChannelGainCal {
+    fn default() -> Self {
+        Self::from_parts(ChannelGainCalMsb::default(), ChannelGainCalLsb::default())
+    }
+}
+
+/// Device `CHx_GCAL_MSB` register
+///
+/// This is only one half of a [`ChannelGainCal`], use [`ChannelGainCal::from_parts`] to combine the two halves
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ChannelGainCalMsb {
+    bytes: [u8; 2],
+}
+
+impl ChannelSpecific for ChannelGainCalMsb {
+    fn address_for_channel(channel: Channel) -> Address {
+        Address::ChannelGainCalMsb(channel)
+    }
+
+    fn from_be_bytes(bytes: [u8; 2]) -> Self {
+        Self { bytes }
+    }
+
+    fn to_be_bytes(self) -> [u8; 2] {
+        self.bytes
+    }
+}
+
+impl Default for ChannelGainCalMsb {
     fn default() -> Self {
         Self {
-            gain: u24::new(0x0080_0000),
+            bytes: [0x80, 0x00],
         }
     }
 }
 
-/// Command for the ADC
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Command {
-    /// No operation
-    Null,
-    /// Reset the device
-    Reset,
-    /// Put the device in standby mode
-    Standby,
-    /// Wake the device from standby mode to conversion mode
-    Wakeup,
-    /// Lock the interface such that only the `Null`, `Unlock`, and `ReadRegister` commands are valid
-    Lock,
-    /// Unlock the interface after it has been locked
-    Unlock,
+/// Device `CHx_GCAL_LSB` register
+///
+/// This is only one half of a [`ChannelGainCal`], use [`ChannelGainCal::from_parts`] to combine the two halves
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct ChannelGainCalLsb {
+    bytes: [u8; 2],
 }
 
-impl Command {
-    /// Returns the command bytes for this command
-    ///
-    /// Words are MSB first
-    #[must_use]
-    pub const fn to_be_bytes(&self) -> [u8; 2] {
-        match self {
-            Self::Null => [0x00, 0x00],
-            Self::Reset => [0x00, 0x11],
-            Self::Standby => [0x00, 0x22],
-            Self::Wakeup => [0x00, 0x33],
-            Self::Lock => [0x05, 0x55],
-            Self::Unlock => [0x06, 0x55],
-        }
+impl ChannelSpecific for ChannelGainCalLsb {
+    fn address_for_channel(channel: Channel) -> Address {
+        Address::ChannelGainCalLsb(channel)
+    }
+
+    fn from_be_bytes(bytes: [u8; 2]) -> Self {
+        Self { bytes }
+    }
+
+    fn to_be_bytes(self) -> [u8; 2] {
+        self.bytes
     }
 }
 
-/// Response from the ADC
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Response {
-    /// Nothing done. This is the response to [Command::Null]
-    Null(Status),
-    /// Device reset. This is the response to [Command::Reset]
-    Reset,
-    /// Device put into standby. This is the response to [Command::Standby]
-    Standby,
-    /// Device woken from standby. This is the response to [Command::Wakeup]
-    Wakeup,
-    /// Device SPI interface locked. This is the response to [Command::Lock]
-    Lock,
-    /// Device SPI interface unlocked. This is the response to [Command::Unlock]
-    Unlock,
+/// Device `REGMAP_CRC` register
+///
+/// This register is read only. Writing to it has no effect
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct RegistryMapCrc {
+    /// Register map CRC
+    pub crc: u16,
 }
 
-impl Response {
-    /// Try to decode a response from some bytes, returning [None] if the bytes do not match any response type
-    #[must_use]
-    pub fn try_from_be_bytes(bytes: [u8; 2]) -> Option<Self> {
-        // Response bits:
-        // 1111 1111 0010 0100: Reset
-        // 0000 0000 0010 0010: Standby
-        // 0000 0000 0011 0011: Wakeup
-        // 0000 0101 0101 0101: Lock
-        // 0000 0110 0101 0101: Unlock
-        //
-        // Status register bits, assuming the RESET bit is always set:
-        // xxxx x1xx 0000 xxxx
-        //
-        // If we only look at the bits that are fixed in the Status register
-        // we can see that it has a unique pattern that we can use
-        // to distinguish it from other responses
-        // ____ _1__ 0010 ____: Reset
-        // ____ _0__ 0010 ____: Standby
-        // ____ _0__ 0011 ____: Wakeup
-        // ____ _1__ 0101 ____: Lock
-        // ____ _1__ 0101 ____: Unlock
-        // ____ _1__ 0000 ____: Status
-        match bytes {
-            [0xFF, 0x24] => Some(Self::Reset),
-            [0x00, 0x22] => Some(Self::Standby),
-            [0x00, 0x33] => Some(Self::Wakeup),
-            [0x05, 0x55] => Some(Self::Lock),
-            [0x06, 0x55] => Some(Self::Unlock),
-            b if (b[0] & 0x4) != 0 && (b[1] & 0xF0) == 0 => {
-                Some(Self::Null(Status::from_be_bytes(b)))
-            }
-            _ => None,
+impl Global for RegistryMapCrc {
+    const ADDRESS: Address = Address::RegisterMapCrc;
+
+    fn from_be_bytes(bytes: [u8; 2]) -> Self {
+        Self {
+            crc: u16::from_be_bytes(bytes),
         }
+    }
+
+    fn to_be_bytes(self) -> [u8; 2] {
+        self.crc.to_be_bytes()
     }
 }
 
@@ -1093,14 +1403,32 @@ mod tests {
 
     #[test]
     fn threshold_default() {
-        assert_eq!(Threshold::default().to_be_bytes(), [0x00, 0x00, 0x00, 0x00]);
         assert_eq!(
-            Threshold::from_be_bytes([0x00, 0x00, 0x00, 0x00]),
+            Threshold::default().into_parts(),
+            (
+                ThresholdMsb {
+                    bytes: [0x00, 0x00]
+                },
+                ThresholdLsb {
+                    bytes: [0x00, 0x00]
+                }
+            )
+        );
+        assert_eq!(
+            Threshold::from_parts(
+                ThresholdMsb {
+                    bytes: [0x00, 0x00]
+                },
+                ThresholdLsb {
+                    bytes: [0x00, 0x00]
+                }
+            ),
             Threshold::default()
         );
     }
 
     #[test]
+    #[allow(clippy::similar_names)]
     fn threshold_round_trip() {
         for thresholds in [
             0, 2_097_152, 4_194_304, 6_291_456, 8_388_608, 10_485_760, 12_582_912, 14_680_064,
@@ -1111,7 +1439,8 @@ mod tests {
                     dc_block,
                 };
 
-                assert_eq!(threshold, Threshold::from_be_bytes(threshold.to_be_bytes()));
+                let (msb, lsb) = threshold.into_parts();
+                assert_eq!(threshold, Threshold::from_parts(msb, lsb));
             }
         }
     }
@@ -1144,123 +1473,79 @@ mod tests {
 
     #[test]
     fn channel_offset_cal_default() {
-        assert_eq!(OffsetCal::default().to_be_bytes(), [0x00, 0x00, 0x00, 0x00]);
         assert_eq!(
-            OffsetCal::from_be_bytes([0x00, 0x00, 0x00, 0x00]),
-            OffsetCal::default()
+            ChannelOffsetCal::default().into_parts(),
+            (
+                ChannelOffsetCalMsb {
+                    bytes: [0x00, 0x00]
+                },
+                ChannelOffsetCalLsb {
+                    bytes: [0x00, 0x00]
+                }
+            )
+        );
+        assert_eq!(
+            ChannelOffsetCal::from_parts(
+                ChannelOffsetCalMsb {
+                    bytes: [0x00, 0x00]
+                },
+                ChannelOffsetCalLsb {
+                    bytes: [0x00, 0x00]
+                }
+            ),
+            ChannelOffsetCal::default()
         );
     }
 
     #[test]
+    #[allow(clippy::similar_names)]
     fn channel_offset_cal_round_trip() {
         for offset in [
             0, 2_097_152, 4_194_304, 6_291_456, 8_388_608, 10_485_760, 12_582_912, 14_680_064,
         ] {
-            let offset_cal = OffsetCal {
+            let offset_cal = ChannelOffsetCal {
                 offset: u24::new(offset),
             };
 
-            assert_eq!(
-                offset_cal,
-                OffsetCal::from_be_bytes(offset_cal.to_be_bytes())
-            );
+            let (msb, lsb) = offset_cal.into_parts();
+            assert_eq!(offset_cal, ChannelOffsetCal::from_parts(msb, lsb));
         }
     }
 
     #[test]
     fn channel_gain_cal_default() {
-        assert_eq!(GainCal::default().to_be_bytes(), [0x80, 0x00, 0x00, 0x00]);
         assert_eq!(
-            GainCal::from_be_bytes([0x80, 0x00, 0x00, 0x00]),
-            GainCal::default()
+            ChannelGainCal::default().into_parts(),
+            (
+                ChannelGainCalMsb { bytes: [0x80, 00] },
+                ChannelGainCalLsb {
+                    bytes: [0x00, 0x00]
+                }
+            )
+        );
+        assert_eq!(
+            ChannelGainCal::from_parts(
+                ChannelGainCalMsb { bytes: [0x80, 00] },
+                ChannelGainCalLsb {
+                    bytes: [0x00, 0x00]
+                }
+            ),
+            ChannelGainCal::default()
         );
     }
 
     #[test]
+    #[allow(clippy::similar_names)]
     fn channel_gain_cal_round_trip() {
         for gain in [
             0, 2_097_152, 4_194_304, 6_291_456, 8_388_608, 10_485_760, 12_582_912, 14_680_064,
         ] {
-            let gain_cal = GainCal {
+            let gain_cal = ChannelGainCal {
                 gain: u24::new(gain),
             };
 
-            assert_eq!(gain_cal, GainCal::from_be_bytes(gain_cal.to_be_bytes()));
+            let (msb, lsb) = gain_cal.into_parts();
+            assert_eq!(gain_cal, ChannelGainCal::from_parts(msb, lsb));
         }
-    }
-
-    #[test]
-    fn command_encode() {
-        assert_eq!(Command::Null.to_be_bytes(), [0b0000_0000, 0b0000_0000]);
-        assert_eq!(Command::Reset.to_be_bytes(), [0b0000_0000, 0b0001_0001]);
-        assert_eq!(Command::Standby.to_be_bytes(), [0b0000_0000, 0b0010_0010]);
-        assert_eq!(Command::Wakeup.to_be_bytes(), [0b0000_0000, 0b0011_0011]);
-        assert_eq!(Command::Lock.to_be_bytes(), [0b0000_0101, 0b0101_0101]);
-        assert_eq!(Command::Unlock.to_be_bytes(), [0b0000_0110, 0b0101_0101]);
-    }
-
-    #[test]
-    fn response_decode() {
-        assert_eq!(
-            Response::try_from_be_bytes([0b1111_1111, 0b0010_0100]),
-            Some(Response::Reset)
-        );
-        assert_eq!(
-            Response::try_from_be_bytes([0b0000_0000, 0b0010_0010]),
-            Some(Response::Standby)
-        );
-        assert_eq!(
-            Response::try_from_be_bytes([0b0000_0000, 0b0011_0011]),
-            Some(Response::Wakeup)
-        );
-        assert_eq!(
-            Response::try_from_be_bytes([0b0000_0101, 0b0101_0101]),
-            Some(Response::Lock)
-        );
-        assert_eq!(
-            Response::try_from_be_bytes([0b0000_0110, 0b0101_0101]),
-            Some(Response::Unlock)
-        );
-        assert_eq!(
-            Response::try_from_be_bytes([0b0000_0101, 0b0000_0000]),
-            Some(Response::Null(Status {
-                lock: false,
-                resync: false,
-                reg_map_crc_err: false,
-                spi_crc_err: false,
-                crc_type: CrcType::Ccitt,
-                reset: true,
-                word_length: WordLength::Bits24,
-                drdy0: false,
-                drdy1: false,
-                drdy2: false,
-                drdy3: false
-            }))
-        );
-        assert_eq!(
-            Response::try_from_be_bytes([0b1111_1111, 0b0000_1111]),
-            Some(Response::Null(Status {
-                lock: true,
-                resync: true,
-                reg_map_crc_err: true,
-                spi_crc_err: true,
-                crc_type: CrcType::Ansi,
-                reset: true,
-                word_length: WordLength::Bits32Signed,
-                drdy0: true,
-                drdy1: true,
-                drdy2: true,
-                drdy3: true
-            }))
-        );
-        assert_eq!(
-            Response::try_from_be_bytes([0b1111_1111, 0b0001_1111]),
-            None
-        );
-
-        assert_eq!(
-            Response::try_from_be_bytes([0b0000_0000, 0b0010_0000]),
-            None
-        );
     }
 }

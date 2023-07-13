@@ -53,13 +53,11 @@
 pub mod device;
 pub mod error;
 pub mod interface;
-pub mod types;
+pub mod register;
 
-pub use device::{
-    AdcChannel0, AdcChannel1, AdcChannel2, AdcChannel3, AdcChannel4, AdcChannel5, AdcChannel6,
-    AdcChannel7, Ads131m,
-};
-pub use error::Error;
-pub use interface::Interface;
-
-mod registers;
+// pub use device::{
+//     AdcChannel0, AdcChannel1, AdcChannel2, AdcChannel3, AdcChannel4, AdcChannel5, AdcChannel6,
+//     AdcChannel7, Ads131m,
+// };
+// pub use error::Error;
+// pub use interface::SpiTransfer;

@@ -1,218 +1,316 @@
 //! Device Driver
 
-use core::marker::PhantomData;
-
-use crate::interface::Interface;
-use crate::registers;
-use crate::types::{
-    ChannelConfig, Clock, Command, Config, CrcType, Gain, GainCal, Id, Mode, OffsetCal, Response,
-    Status, Threshold, WordLength,
+use crate::error::Error;
+use crate::interface::{Interface, WordTransfer};
+use crate::register::{
+    Address, Channel, ChannelSpecific, CrcType, Global, Mode, Status, WordLength,
 };
-use crate::Error;
-use concat_idents::concat_idents;
+
 use crc::{Crc, CRC_16_CMS, CRC_16_IBM_3740};
-use ringbuffer::{ConstGenericRingBuffer, RingBuffer, RingBufferRead, RingBufferWrite};
-use static_assertions::const_assert_eq;
+use embedded_hal::digital::v2::InputPin;
 use ux::i24;
 
-// Since no const-generic math, we have to use the max possible buffer size
-// 32-bit words (4 bytes) * ( 1 response word + 8 channel data + 1 CRC word)
-const BUF_SIZE: usize = 4 * (1 + 8 + 1);
+// Since no const-generic math, we have to use the max possible buffer sizes
+// Max word len * (command + 1 register writes + CRC)
+const MAX_WRITE_LEN: usize = 4 * (1 + 1 + 1);
 
-// Maybe some fancy const stuff can be done instead of this at some point.
-// Just having a channel_idx input would not be checked at compile time
-#[rustfmt::skip]
-macro_rules! impl_channel {
-    ($trait_name:ident, $channel_name:ident, $channel_num:literal) => {
-        #[doc=concat!("Methods for configuring ADC channel ", $channel_num)]
-        pub trait $trait_name<I>
-        where
-            Self: RegisterAccess,
-        {
-            concat_idents!(get_channel_config = get_, $channel_name, _config, {
-                #[doc=concat!(
-                    "Read the `CH",
-                    $channel_num,
-                    "_CFG` register",
-                    "\n\n",
-                    "# Errors\n",
-                    "Returns `Err` if there was an error during SPI communication"
-                )]
-                fn get_channel_config(&mut self) -> Result<ChannelConfig, Error> {
-                    let mut bytes = [0u8; 2];
-                    self.read_regs(registers::CHANNEL_CONFIG_ADDRS[$channel_num], &mut bytes)?;
-                    Ok(ChannelConfig::from_be_bytes(bytes))
-                }
-            });
+// The max read len is 2 words so that won't be longer than a normal command
+// Max word len * (command + 8 channels + CRC)
+const MAX_READ_LEN: usize = 4 * (1 + 8 + 1);
 
-            concat_idents!(set_channel_config = set_, $channel_name, _config, {
-                #[doc=concat!(
-                    "Write to the `CH",
-                    $channel_num,
-                    "_CFG` register",
-                    "\n\n",
-                    "# Errors\n",
-                    "Returns `Err` if there was an error during SPI communication"
-                )]
-                fn set_channel_config(&mut self, config: ChannelConfig) -> Result<(), Error> {
-                    self.write_all_regs(registers::CHANNEL_CONFIG_ADDRS[$channel_num], &config.to_be_bytes())
-                }
-            });
-
-            concat_idents!(get_channel_offset_cal = get_, $channel_name, _offset_cal, {
-                #[doc=concat!(
-                    "Read the `CH",
-                    $channel_num,
-                    "_OCAL_MSB` and `CH",
-                    $channel_num,
-                    "_OCAL_LSB` registers",
-                    "\n\n",
-                    "# Errors\n",
-                    "Returns `Err` if there was an error during SPI communication"
-                )]
-                fn get_channel_offset_cal(&mut self) -> Result<OffsetCal, Error> {
-                    // Ensure registers are contiguous
-                    const_assert_eq!(
-                        registers::CHANNEL_OCAL_MSB_ADDRS[$channel_num] + 1,
-                        registers::CHANNEL_OCAL_LSB_ADDRS[$channel_num]
-                    );
-                    // This macro doesn't "use" these variables, so we need to fake it
-                    let _ = registers::CHANNEL_OCAL_LSB_ADDRS[$channel_num];
-
-                    let mut bytes = [0u8; 4];
-                    self.read_regs(registers::CHANNEL_OCAL_MSB_ADDRS[$channel_num], &mut bytes)?;
-                    Ok(OffsetCal::from_be_bytes(bytes))
-                }
-            });
-
-            concat_idents!(set_channel_offset_cal = set_, $channel_name, _offset_cal, {
-                #[doc=concat!(
-                    "Write to the `CH",
-                    $channel_num,
-                    "_OCAL_MSB` and `CH",
-                    $channel_num,
-                    "_OCAL_LSB` registers",
-                    "\n\n",
-                    "# Errors\n",
-                    "Returns `Err` if there was an error during SPI communication"
-                )]
-                fn set_channel_offset_cal(&mut self, offset_cal: OffsetCal) -> Result<(), Error> {
-                    // Ensure registers are contiguous
-                    const_assert_eq!(
-                        registers::CHANNEL_OCAL_MSB_ADDRS[$channel_num] + 1,
-                        registers::CHANNEL_OCAL_LSB_ADDRS[$channel_num]
-                    );
-                    // This macro doesn't "use" these variables, so we need to fake it
-                    let _ = registers::CHANNEL_OCAL_LSB_ADDRS[$channel_num];
-
-                    self.write_all_regs(registers::CHANNEL_OCAL_MSB_ADDRS[$channel_num], &offset_cal.to_be_bytes())
-                }
-            });
-
-            concat_idents!(get_channel_gain_cal = get_, $channel_name, _gain_cal, {
-                #[doc=concat!(
-                    "Read the `CH",
-                    $channel_num,
-                    "_GCAL_MSB` and `CH",
-                    $channel_num,
-                    "_GCAL_LSB` registers",
-                    "\n\n",
-                    "# Errors\n",
-                    "Returns `Err` if there was an error during SPI communication"
-                )]
-                fn get_channel_gain_cal(&mut self) -> Result<GainCal, Error> {
-                    // Ensure registers are contiguous
-                    const_assert_eq!(
-                        registers::CHANNEL_GCAL_MSB_ADDRS[$channel_num] + 1,
-                        registers::CHANNEL_GCAL_LSB_ADDRS[$channel_num]
-                    );
-                    // This macro doesn't "use" these variables, so we need to fake it
-                    let _ = registers::CHANNEL_GCAL_LSB_ADDRS[$channel_num];
-
-                    let mut bytes = [0u8; 4];
-                    self.read_regs(registers::CHANNEL_GCAL_MSB_ADDRS[$channel_num], &mut bytes)?;
-                    Ok(GainCal::from_be_bytes(bytes))
-                }
-            });
-
-            concat_idents!(set_channel_gain_cal = set_, $channel_name, _gain_cal, {
-                #[doc=concat!(
-                    "Write to the `CH",
-                    $channel_num,
-                    "_GCAL_MSB` and `CH",
-                    $channel_num,
-                    "_GCAL_LSB` registers",
-                    "\n\n",
-                    "# Errors\n",
-                    "Returns `Err` if there was an error during SPI communication"
-                )]
-                fn set_channel_gain_cal(&mut self, gain_cal: GainCal) -> Result<(), Error> {
-                    // Ensure registers are contiguous
-                    const_assert_eq!(
-                        registers::CHANNEL_GCAL_MSB_ADDRS[$channel_num] + 1,
-                        registers::CHANNEL_GCAL_LSB_ADDRS[$channel_num]
-                    );
-                    // This macro doesn't "use" these variables, so we need to fake it
-                    let _ = registers::CHANNEL_GCAL_LSB_ADDRS[$channel_num];
-
-                    self.write_all_regs(registers::CHANNEL_GCAL_MSB_ADDRS[$channel_num], &gain_cal.to_be_bytes())
-                }
-            });
-        }
-    };
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+enum CommandKind {
+    Null,
+    Reset,
+    Standby,
+    Wakeup,
+    Lock,
+    Unlock,
+    WriteRegister { addr: Address, data: [u8; 2] },
+    ReadRegister { addr: Address },
 }
 
-macro_rules! impl_model {
-    ($model:ident, $channel_count:literal, [$($channel:ident),+]) => {
-        impl<I, W, const BUFSIZE: usize> Ads131m<I, W, BUFSIZE, $channel_count>
-        where
-            I: Interface<W>,
-            W: Copy,
-        {
-            concat_idents!(open = open_, $model, {
-                #[doc=concat!(
-                    "Initialize a TI [`ADS131M0",
-                    $channel_count,
-                    "`] ADC driver from an [`embedded-hal`] SPI interface\n\n",
-                    "# Notes\n",
-                    "The SPI interface must be configured for SPI mode 1\n\n",
-                    "The device must have it's `MODE` register in the default (reset) state\n\n",
-                    "`BUFSIZE` should be a power of two, or performance could be significantly slower.\n\n",
-                    "[`ADS131M0",
-                    $channel_count,
-                    "`]: https://www.ti.com/lit/ds/symlink/ads131m0",
-                    $channel_count,
-                    "\n",
-                    "[`embedded-hal`]: https://github.com/rust-embedded/embedded-hal"
-                )]
-                pub fn open(intf: I) -> Self {
-                    Self::new(intf, Mode::default())
-                }
-            });
-            concat_idents!(open_with_mode = open_, $model, _with_mode, {
-                #[doc=concat!(
-                    "Initialize a TI [`ADS131M0",
-                    $channel_count,
-                    "`] ADC driver from an [`embedded-hal`] SPI interface with a custom configuration\n\n",
-                    "# Notes\n",
-                    "The SPI interface must be configured for SPI mode 1\n\n",
-                    "The current state of the device's `MODE` register must match the `mode` argument\n\n",
-                    "`BUFSIZE` should be a power of two, or performance could be significantly slower.\n\n",
-                    "[`ADS131M0",
-                    $channel_count,
-                    "`]: https://www.ti.com/lit/ds/symlink/ads131m0",
-                    $channel_count,
-                    "\n",
-                    "[`embedded-hal`]: https://github.com/rust-embedded/embedded-hal"
-                )]
-                pub fn open_with_mode(intf: I, mode: Mode) -> Self {
-                    Self::new(intf, mode)
-                }
-            });
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+enum ResponseKind {
+    Null,
+    Reset,
+    Standby,
+    Wakeup,
+    Lock,
+    Unlock,
+    WriteRegister { addr: u8, count: u8 },
+    ReadRegister { addr: Address },
+}
+
+impl ResponseKind {
+    /// Try to decode a response from some bytes, returning `None` if the bytes do not match any response type
+    ///
+    /// # Note
+    ///
+    /// This will never return `ReadRegister` or `WriteRegister`
+    /// as those cannot always be distinguished from other values
+    #[must_use]
+    const fn try_decode_simple_response(bytes: [u8; 2]) -> Option<Self> {
+        match bytes {
+            [0xFF, 0x24] => Some(Self::Reset),
+            [0x00, 0x22] => Some(Self::Standby),
+            [0x00, 0x33] => Some(Self::Wakeup),
+            [0x05, 0x55] => Some(Self::Lock),
+            [0x06, 0x55] => Some(Self::Unlock),
+            _ => None,
+        }
+    }
+
+    /// Try to decode a status from some bytes, returning `None` if the bytes do not match a status message
+    #[must_use]
+    fn try_decode_null_response(bytes: [u8; 2]) -> Option<Status> {
+        if (bytes[1] & 0xF0) == 0 {
+            Some(Status::from_be_bytes(bytes))
+        } else {
+            None
+        }
+    }
+
+    /// Try to decode a `WriteRegister`response from some bytes,
+    /// returning `None` if the bytes do not represent a valid `WriteRegister`
+    #[must_use]
+    const fn try_decode_write_register(bytes: [u8; 2]) -> Option<Self> {
+        if bytes[0] & 0xE0 != 0x40 {
+            return None;
         }
 
-        $(impl<I: Interface<W>, W: Copy, const BUFSIZE: usize> $channel<I> for Ads131m<I, W, BUFSIZE, $channel_count> {})+
-    };
+        Some(Self::WriteRegister {
+            addr: (bytes[0] & 0x1F) << 1 | bytes[1] >> 7,
+            count: (bytes[1] & 0x7F) + 1,
+        })
+    }
+}
+
+struct ModeCache {
+    crc_table: Crc<u16>,
+    word_len: usize,
+    word_packing: WordLength,
+    spi_crc_enable: bool,
+}
+
+impl ModeCache {
+    const fn new(mode: Mode) -> Self {
+        let crc_alg = match mode.crc_type {
+            CrcType::Ccitt => &CRC_16_CMS,
+            CrcType::Ansi => &CRC_16_IBM_3740,
+        };
+
+        Self {
+            crc_table: Crc::<u16>::new(crc_alg),
+            word_len: mode.word_length.byte_count(),
+            word_packing: mode.word_length,
+            spi_crc_enable: mode.spi_crc_enable,
+        }
+    }
+
+    fn update_word_length(&mut self, word_length: WordLength) {
+        self.word_len = word_length.byte_count();
+        self.word_packing = word_length;
+    }
+}
+
+/// A command to the device
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct Command {
+    inner: CommandKind,
+}
+
+impl Command {
+    /// No operation
+    ///
+    /// Send this command if you just want to receive a sample grab
+    #[must_use]
+    pub const fn null() -> Self {
+        Self {
+            inner: CommandKind::Null,
+        }
+    }
+
+    /// Reset the device
+    ///
+    /// TODO: After this message is sent, this driver will not perform another transaction
+    /// for 5us while the registers stabilize
+    ///
+    /// After this command is sent the internal mode cache will be updated,
+    /// which can change how the driver communicates
+    #[must_use]
+    pub const fn reset() -> Self {
+        Self {
+            inner: CommandKind::Reset,
+        }
+    }
+
+    /// Place the device in a low power standby mode
+    /// This disables all device channels and powers down non essential circuitry
+    /// The sample clock should be disabled after this command to maximize power savings
+    #[must_use]
+    pub const fn standby() -> Self {
+        Self {
+            inner: CommandKind::Standby,
+        }
+    }
+
+    /// Wake the device from standby mode
+    /// The sample clock should be enabled after this command
+    #[must_use]
+    pub const fn wakeup() -> Self {
+        Self {
+            inner: CommandKind::Wakeup,
+        }
+    }
+
+    /// Lock lock the device to only respond to the `null`, `read_register`, and `unlock` commands
+    #[must_use]
+    pub const fn lock() -> Self {
+        Self {
+            inner: CommandKind::Lock,
+        }
+    }
+
+    /// Unlock the device after it has been locked
+    #[must_use]
+    pub const fn unlock() -> Self {
+        Self {
+            inner: CommandKind::Unlock,
+        }
+    }
+
+    /// Write to a global device register
+    ///
+    /// If the device's [`Mode`] register is written, the internal mode cache will be updated,
+    /// which can change how the driver communicates
+    #[must_use]
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn write_global_register<R: Global>(register: R) -> Self {
+        Self {
+            inner: CommandKind::WriteRegister {
+                addr: R::ADDRESS,
+                data: register.to_be_bytes(),
+            },
+        }
+    }
+
+    /// Write to a channel-specific device register
+    #[must_use]
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn write_channel_register<R: ChannelSpecific>(register: R, channel: Channel) -> Self {
+        Self {
+            inner: CommandKind::WriteRegister {
+                addr: R::address_for_channel(channel),
+                data: register.to_be_bytes(),
+            },
+        }
+    }
+
+    /// Read from a device register
+    #[must_use]
+    pub const fn read_register(address: Address) -> Self {
+        Self {
+            inner: CommandKind::ReadRegister { addr: address },
+        }
+    }
+
+    /// Return the channel for this command, if applicable
+    const fn channel(self) -> Option<Channel> {
+        match self.inner {
+            CommandKind::ReadRegister { addr } | CommandKind::WriteRegister { addr, .. } => {
+                addr.channel()
+            }
+            _ => None,
+        }
+    }
+
+    /// Encode this command to `buf` and return the number of bytes written
+    ///
+    /// Words are MSB first
+    ///
+    /// This will pad the buffer with zeros to ensure the data written is a multiple of `word_len` in length
+    ///
+    /// # Panics
+    ///
+    /// Will panic if `buf` does not have room for the command.
+    /// The maximum command length is 2 * `word_len`
+    #[must_use]
+    fn encode_words(self, buf: &mut [u8], word_len: usize) -> usize {
+        let bytes = match self.inner {
+            CommandKind::Null => [0x00, 0x00],
+            CommandKind::Reset => [0x00, 0x11],
+            CommandKind::Standby => [0x00, 0x22],
+            CommandKind::Wakeup => [0x00, 0x33],
+            CommandKind::Lock => [0x05, 0x55],
+            CommandKind::Unlock => [0x06, 0x55],
+            CommandKind::WriteRegister { addr, .. } => {
+                let a = addr.address();
+                [0x60 | a >> 1, (a & 0b1) << 7]
+            }
+            CommandKind::ReadRegister { addr } => {
+                let a = addr.address();
+                [0xA0 | a >> 1, (a & 0b1) << 7]
+            }
+        };
+
+        buf[..2].copy_from_slice(&bytes);
+        let mut len = 2;
+
+        while len < word_len {
+            buf[len] = 0;
+            len += 1;
+        }
+
+        if let CommandKind::WriteRegister { data, .. } = self.inner {
+            buf[len..len + 2].copy_from_slice(&data);
+            len += 2;
+
+            while len < word_len * 2 {
+                buf[len] = 0;
+                len += 1;
+            }
+        }
+
+        len
+    }
+
+    /// Get the expected response to the command
+    #[must_use]
+    const fn expected_response(self) -> ResponseKind {
+        match self.inner {
+            CommandKind::Null => ResponseKind::Null,
+            CommandKind::Reset => ResponseKind::Reset,
+            CommandKind::Standby => ResponseKind::Standby,
+            CommandKind::Wakeup => ResponseKind::Wakeup,
+            CommandKind::Lock => ResponseKind::Lock,
+            CommandKind::Unlock => ResponseKind::Unlock,
+            CommandKind::WriteRegister { addr, .. } => ResponseKind::WriteRegister {
+                addr: addr.address(),
+                count: 1,
+            },
+            CommandKind::ReadRegister { addr } => ResponseKind::ReadRegister { addr },
+        }
+    }
+}
+
+/// The result of a register read
+pub struct RegisterData {
+    /// The address that was read from
+    pub address: Address,
+    /// The data that was read
+    pub data: [u8; 2],
+}
+
+/// A response from the ADC, usually containing
+#[must_use = "this `Response` may contain a `SampleGrab` and a `RegisterData`, which should be used"]
+pub struct Response<const CHANNELS: usize> {
+    /// The returned sample grab, if any
+    pub sample_grab: Option<SampleGrab<CHANNELS>>,
+    /// The data read from a register, if a read was requested
+    pub register_read: Option<RegisterData>,
+    /// The current ADC status, if it was returned
+    pub status: Option<Status>,
 }
 
 /// A single ADC sample grab for all channels
@@ -278,340 +376,70 @@ impl<const CHANNELS: usize> SampleGrab<CHANNELS> {
 /// TODO: Description
 ///
 /// TODO: Examples
-pub struct Ads131m<I: Interface<W>, W: Copy, const BUFSIZE: usize, const CHANNELS: usize> {
-    // Comms
-    intf: I,
-    read_buf: [u8; BUF_SIZE],
-    write_buf: [u8; BUF_SIZE],
-    // Samples
-    sample_buf: ConstGenericRingBuffer<SampleGrab<CHANNELS>, BUFSIZE>,
-    sample_drop_count: usize,
-    // Mode
-    crc_table: Crc<u16>,
-    word_len: usize,
-    word_packing: WordLength,
-    spi_crc_enable: bool,
-    //Type stuff
-    w: PhantomData<W>,
+pub struct Ads131m<S: WordTransfer<W>, W: Copy, D: InputPin, const CHANNELS: usize> {
+    intf: Interface<S, W, D>,
+    read_buf: [u8; MAX_READ_LEN],
+    write_buf: [u8; MAX_WRITE_LEN],
+    required_delay: Option<bool>,
+    expected_response: ResponseKind,
+    mode_cache: ModeCache,
 }
 
-impl<I, W, const BUFSIZE: usize, const CHANNELS: usize> Ads131m<I, W, BUFSIZE, CHANNELS>
+impl<S, W, D, const CHANNELS: usize> Ads131m<S, W, D, CHANNELS>
 where
-    I: Interface<W>,
+    S: WordTransfer<W>,
     W: Copy,
+    D: InputPin,
 {
-    /// Get the number of sample grabs available
-    pub fn sample_grab_count(&self) -> usize {
-        self.sample_buf.len()
-    }
-
-    /// Get the number of sample grabs that overflowed the sample buffer
-    pub const fn sample_grab_overflow_count(&self) -> usize {
-        self.sample_drop_count
-    }
-
-    /// Reset the count of sample grabs that overflowed the sample buffer
-    pub fn reset_grab_overflow_count(&mut self) {
-        self.sample_drop_count = 0;
-    }
-
-    /// Get a sample grab from the buffer
-    pub fn dequeue_sample_grab(&mut self) -> Option<SampleGrab<CHANNELS>> {
-        self.sample_buf.dequeue()
-    }
-
-    /// Reset the device to it's default state.
+    /// Check if the device is ready to communicate
     ///
-    /// The device must not be used again for 5us while the registers stabilize
+    /// This will return `true` if DRDY is asserted and no delay is required after a reset
     ///
-    /// This also updates the internal cache of the device mode, which can change how the driver communicates
+    /// This returning `true` does not guarantee that `communicate` will succeed
     ///
     /// # Errors
-    /// Returns `Err` if there was an error during SPI communication
-    pub fn reset(&mut self) -> Result<(), Error> {
-        let _ = self.send_simple_command(Command::Reset)?;
-        self.process_new_mode(Mode::default());
-        Ok(())
-    }
-
-    /// Place the device in a low power standby mode
-    /// This disables all device channels and powers down non essential circuitry
-    /// The sample clock should be disabled after this command to maximize power savings
-    ///
-    /// # Errors
-    /// Returns `Err` if there was an error during SPI communication
-    pub fn standby(&mut self) -> Result<(), Error> {
-        let _ = self.send_simple_command(Command::Standby)?;
-        let resp = self.send_simple_command(Command::Null)?;
-        match Response::try_from_be_bytes(resp) {
-            Some(Response::Standby) => Ok(()),
-            _ => Err(Error::UnexpectedResponse(Some(resp))),
-        }
-    }
-
-    /// Wake the device from standby mode
-    /// The sample clock should be enables after this command
-    ///
-    /// # Errors
-    /// Returns `Err` if there was an error during SPI communication
-    pub fn wakeup(&mut self) -> Result<(), Error> {
-        let _ = self.send_simple_command(Command::Wakeup)?;
-        let resp = self.send_simple_command(Command::Null)?;
-        match Response::try_from_be_bytes(resp) {
-            Some(Response::Wakeup) => Ok(()),
-            _ => Err(Error::UnexpectedResponse(Some(resp))),
-        }
-    }
-
-    /// Lock the device to only respond to the Null, Read Register, and Unlock commands
-    ///
-    /// # Errors
-    /// Returns `Err` if there was an error during SPI communication
-    pub fn lock(&mut self) -> Result<(), Error> {
-        let _ = self.send_simple_command(Command::Lock)?;
-        let resp = self.send_simple_command(Command::Null)?;
-        match Response::try_from_be_bytes(resp) {
-            Some(Response::Lock) => Ok(()),
-            _ => Err(Error::UnexpectedResponse(Some(resp))),
-        }
-    }
-
-    /// Unlock the device if it was locked
-    ///
-    /// # Errors
-    /// Returns `Err` if there was an error during SPI communication
-    pub fn unlock(&mut self) -> Result<(), Error> {
-        let _ = self.send_simple_command(Command::Unlock)?;
-        let resp = self.send_simple_command(Command::Null)?;
-        match Response::try_from_be_bytes(resp) {
-            Some(Response::Unlock) => Ok(()),
-            _ => Err(Error::UnexpectedResponse(Some(resp))),
-        }
-    }
-
-    /// Read the `ID` register
-    ///
-    /// # Errors
-    /// Returns `Err` if there was an error during SPI communication
-    pub fn get_id(&mut self) -> Result<Id, Error> {
-        let mut bytes = [0u8; 2];
-        self.read_regs(registers::ID_ADDR, &mut bytes)?;
-        Ok(Id::from_be_bytes(bytes))
-    }
-
-    /// Read the `STATUS` register
-    ///
-    /// # Errors
-    /// Returns `Err` if there was an error during SPI communication
-    pub fn get_status(&mut self) -> Result<Status, Error> {
-        let mut bytes = [0u8; 2];
-        self.read_regs(registers::STATUS_ADDR, &mut bytes)?;
-        Ok(Status::from_be_bytes(bytes))
-    }
-
-    /// Read the `MODE` register
-    ///
-    /// This also updates the internal cache of the device mode, which can change how the driver communicates
-    ///
-    /// # Errors
-    /// Returns `Err` if there was an error during SPI communication
-    pub fn get_mode(&mut self) -> Result<Mode, Error> {
-        let mut bytes = [0u8; 2];
-        self.read_regs(registers::MODE_ADDR, &mut bytes)?;
-        let mode = Mode::from_be_bytes(bytes);
-
-        self.process_new_mode(mode);
-        Ok(mode)
-    }
-
-    /// Write to the `MODE` register
-    ///
-    /// This also updates the internal cache of the device mode, which can change how the driver communicates
-    ///
-    /// # Errors
-    /// Returns `Err` if there was an error during SPI communication
-    pub fn set_mode(&mut self, mode: Mode) -> Result<(), Error> {
-        self.write_all_regs(registers::MODE_ADDR, &mode.to_be_bytes())?;
-
-        self.process_new_mode(mode);
-        Ok(())
-    }
-
-    /// Read the `CLOCK` register
-    ///
-    /// # Errors
-    /// Returns `Err` if there was an error during SPI communication
-    pub fn get_clock(&mut self) -> Result<Clock, Error> {
-        let mut bytes = [0u8; 2];
-        self.read_regs(registers::CLOCK_ADDR, &mut bytes)?;
-        Ok(Clock::from_be_bytes(bytes))
-    }
-
-    /// Write to the `CLOCK` register
-    ///
-    /// # Errors
-    /// Returns `Err` if there was an error during SPI communication
-    pub fn set_clock(&mut self, clock: Clock) -> Result<(), Error> {
-        self.write_all_regs(registers::CLOCK_ADDR, &clock.to_be_bytes())
-    }
-
-    /// Read the GAIN1 register
-    ///
-    /// # Errors
-    /// Returns `Err` if there was an error during SPI communication
-    pub fn get_gain(&mut self) -> Result<Gain, Error> {
-        let mut bytes = [0u8; 2];
-        self.read_regs(registers::GAIN_ADDR, &mut bytes)?;
-        Ok(Gain::from_be_bytes(bytes))
-    }
-
-    /// Write to the `GAIN1` register
-    ///
-    /// # Errors
-    /// Returns `Err` if there was an error during SPI communication
-    pub fn set_gain(&mut self, gain: Gain) -> Result<(), Error> {
-        self.write_all_regs(registers::GAIN_ADDR, &gain.to_be_bytes())
-    }
-
-    /// Read the `CFG` register
-    ///
-    /// # Errors
-    /// Returns `Err` if there was an error during SPI communication
-    pub fn get_config(&mut self) -> Result<Config, Error> {
-        let mut bytes = [0u8; 2];
-        self.read_regs(registers::CFG_ADDR, &mut bytes)?;
-        Ok(Config::from_be_bytes(bytes))
-    }
-
-    /// Write to the `CFG` register
-    ///
-    /// # Errors
-    /// Returns `Err` if there was an error during SPI communication
-    pub fn set_config(&mut self, gain: Config) -> Result<(), Error> {
-        self.write_all_regs(registers::CFG_ADDR, &gain.to_be_bytes())
-    }
-
-    /// Read the `THRSHLD_MSB` and `THRSHLD_LSB` registers
-    ///
-    /// # Errors
-    /// Returns `Err` if there was an error during SPI communication
-    pub fn get_threshold(&mut self) -> Result<Threshold, Error> {
-        // Ensure registers are contiguous
-        const_assert_eq!(registers::THRSHLD_MSB_ADDR + 1, registers::THRSHLD_LSB_ADDR);
-        // This macro doesn't "use" these variables, so we need to fake it
-        let _ = registers::THRSHLD_LSB_ADDR;
-
-        let mut bytes = [0u8; 4];
-        self.read_regs(registers::THRSHLD_MSB_ADDR, &mut bytes)?;
-        Ok(Threshold::from_be_bytes(bytes))
-    }
-
-    /// Write to the `THRSHLD_MSB` and `THRSHLD_LSB` registers
-    ///
-    /// # Errors
-    /// Returns `Err` if there was an error during SPI communication
-    pub fn set_threshold(&mut self, threshold: Threshold) -> Result<(), Error> {
-        // Ensure registers are contiguous
-        const_assert_eq!(registers::THRSHLD_MSB_ADDR + 1, registers::THRSHLD_LSB_ADDR);
-        // This macro doesn't "use" these variables, so we need to fake it
-        let _ = registers::THRSHLD_LSB_ADDR;
-
-        self.write_all_regs(registers::THRSHLD_MSB_ADDR, &threshold.to_be_bytes())
-    }
-
-    /// Read the `REGMAP_CRC` register
-    ///
-    /// # Errors
-    /// Returns `Err` if there was an error during SPI communication
-    pub fn get_reg_map_crc(&mut self) -> Result<u16, Error> {
-        let mut bytes = [0u8; 2];
-        self.read_regs(registers::REGMAP_CRC_ADDR, &mut bytes)?;
-        Ok(u16::from_be_bytes(bytes))
-    }
-
-    fn new(intf: I, mode: Mode) -> Self {
-        let mut driver = Self {
-            intf,
-            read_buf: [0; BUF_SIZE],
-            write_buf: [0; BUF_SIZE],
-            sample_buf: ConstGenericRingBuffer::new(),
-            sample_drop_count: 0,
-            crc_table: Crc::<u16>::new(&CRC_16_CMS),
-            word_len: 2,
-            word_packing: WordLength::Bits16,
-            spi_crc_enable: false,
-            w: PhantomData,
-        };
-        driver.process_new_mode(mode);
-
-        driver
-    }
-
-    fn process_new_mode(&mut self, mode: Mode) {
-        let crc_alg = match mode.crc_type {
-            CrcType::Ccitt => &CRC_16_CMS,
-            CrcType::Ansi => &CRC_16_IBM_3740,
-        };
-
-        let word_len = match mode.word_length {
-            WordLength::Bits16 => 2,
-            WordLength::Bits24 => 3,
-            _ => 4,
-        };
-
-        self.crc_table = Crc::<u16>::new(crc_alg);
-        self.word_len = word_len;
-        self.word_packing = mode.word_length;
-        self.spi_crc_enable = mode.spi_crc_enable;
-    }
-
-    #[allow(clippy::identity_op)]
-    fn send_simple_command(&mut self, command: Command) -> Result<[u8; 2], Error> {
-        let mut bytes_written = 0;
-
-        // Commands are always 2 bytes
-        self.write_buf[0..2].copy_from_slice(&command.to_be_bytes());
-        bytes_written += 2;
-
-        while bytes_written < self.word_len {
-            self.write_buf[bytes_written] = 0;
-            bytes_written += 1;
+    /// Will return [`Err(DrdyIOError)`](Error::DrdyIOError) if there is an error reading the DRDY pin
+    pub fn is_ready(&self) -> Result<bool, Error> {
+        if let Some(delay) = self.required_delay {
+            // TODO: Check if delay has elapsed and return if not
+            unimplemented!();
+            return Ok(false);
         }
 
-        let read_len = self.word_len * (1 + CHANNELS);
-        self.transfer_frame(bytes_written, read_len, command != Command::Reset)?;
+        if !self.intf.is_drdy_asserted()? {
+            return Ok(false);
+        }
 
-        // Responses are always 2 bytes
-        let response: [u8; 2] = self.read_buf[..2].try_into().unwrap();
-        let samples =
-            self.decode_samples(&self.read_buf[self.word_len * 1..self.word_len * (CHANNELS + 1)]);
-        self.enqueue_sample_grab(samples);
-
-        Ok(response)
+        Ok(true)
     }
 
-    /// Exchange a single SPI frame with the ADC
-    /// Panics if `command_len` or `resp_len` is greater than `BUF_SIZE` - `self.word_len`
-    fn transfer_frame(
-        &mut self,
-        command_len: usize,
-        read_len: usize,
-        check_resp_crc: bool,
-    ) -> Result<(), Error> {
-        let mut crc_len = 0;
-
-        if self.spi_crc_enable {
-            // CRCs are always 2 bytes
-            let write_crc = self.crc_table.checksum(&self.write_buf[..command_len]);
-            // Only write 2 bytes of CRC, transfer will pad remaining bytes out to word length
-            self.write_buf[command_len..command_len + 2].copy_from_slice(&write_crc.to_be_bytes());
-            crc_len += 2;
-
-            while crc_len < self.word_len {
-                self.write_buf[command_len + crc_len] = 0;
-                crc_len += 1;
-            }
+    /// Communicate with the device if it is ready to do so
+    ///
+    /// Commands must be frequently exchanged with the ADC to ensure sample grabs do not get dropped
+    ///
+    /// # Note
+    /// Responses to commands are given on the following successful exchange,
+    /// ***not*** in the exchange in which they were sent
+    ///
+    /// # Errors
+    /// Will return [`Err(WouldBlock)`](nb::Error::WouldBlock) if the device is not ready to communicate
+    ///
+    /// Will return [`Err(Other)`](nb::Error::Other) if the communication failed
+    pub fn communicate(&mut self, command: Command) -> nb::Result<Response<CHANNELS>, Error> {
+        if !self.is_ready()? {
+            return Err(nb::Error::WouldBlock);
         }
+
+        let write_len = self.encode_command(command).map_err(nb::Error::Other)?;
+
+        // Get expected response for upcoming response, and store the new one
+        let expected_response =
+            core::mem::replace(&mut self.expected_response, command.expected_response());
+
+        let read_len = match expected_response {
+            ResponseKind::ReadRegister { .. } => 1 + 1,
+            _ => 1 + CHANNELS + 1,
+        } * self.mode_cache.word_len;
 
         // This will only happen for ADS131M03 with 24bit word len
         // This will avoid a panic, but I have no idea how that device will handle a padded transaction
@@ -623,15 +451,81 @@ where
         };
 
         self.intf.transfer(
-            &self.write_buf[..command_len + crc_len],
-            &mut self.read_buf[..real_read_len + self.word_len],
+            &self.write_buf[..write_len],
+            &mut self.read_buf[..real_read_len],
         )?;
 
-        if check_resp_crc {
+        let resp = self
+            .decode_response(
+                read_len,
+                expected_response,
+                command.inner == CommandKind::Reset,
+            )
+            .map_err(nb::Error::Other)?;
+
+        match command.inner {
+            CommandKind::WriteRegister {
+                addr: Address::Mode,
+                data,
+            } => self.mode_cache = ModeCache::new(Mode::from_be_bytes(data)),
+            CommandKind::Reset => self.mode_cache = ModeCache::new(Mode::default()),
+            _ => {}
+        }
+
+        Ok(resp)
+    }
+
+    const fn new(intf: Interface<S, W, D>, mode: Mode) -> Self {
+        Self {
+            intf,
+            read_buf: [0; MAX_READ_LEN],
+            write_buf: [0; MAX_WRITE_LEN],
+            required_delay: None,
+            expected_response: ResponseKind::Null,
+            mode_cache: ModeCache::new(mode),
+        }
+    }
+
+    fn encode_command(&mut self, command: Command) -> Result<usize, Error> {
+        if let Some(channel) = command.channel() {
+            if usize::from(u8::from(channel)) > CHANNELS - 1 {
+                return Err(Error::UnsupportedChannel);
+            }
+        }
+
+        let mut write_len: usize =
+            command.encode_words(&mut self.write_buf, self.mode_cache.word_len);
+
+        if self.mode_cache.spi_crc_enable {
+            let write_crc = self
+                .mode_cache
+                .crc_table
+                .checksum(&self.write_buf[..write_len]);
+
+            // Only write 2 bytes of CRC, transfer will pad remaining bytes out to word length
+            self.write_buf[write_len..write_len + 2].copy_from_slice(&write_crc.to_be_bytes());
+            write_len += 2;
+        }
+
+        Ok(write_len)
+    }
+
+    fn decode_response(
+        &mut self,
+        read_len: usize,
+        kind: ResponseKind,
+        reset_frame: bool,
+    ) -> Result<Response<CHANNELS>, Error> {
+        if !reset_frame {
+            let crc_idx = read_len - self.mode_cache.word_len;
+
             // CRCs are always 2 bytes
             let resp_crc =
-                u16::from_be_bytes(self.read_buf[read_len..read_len + 2].try_into().unwrap());
-            let computed_crc = self.crc_table.checksum(&self.read_buf[..read_len]);
+                u16::from_be_bytes(self.read_buf[crc_idx..crc_idx + 2].try_into().unwrap());
+            let computed_crc = self
+                .mode_cache
+                .crc_table
+                .checksum(&self.read_buf[..crc_idx]);
             if resp_crc != computed_crc {
                 return Err(Error::ReceiveCrc {
                     computed: computed_crc,
@@ -640,15 +534,68 @@ where
             }
         }
 
-        Ok(())
+        // TODO: Examine response byte spacing to detect a changing word_len
+
+        let mut status = None;
+        let mut register_read = None;
+
+        let resp_bytes = self.read_buf[..2].try_into().unwrap();
+        let response_valid = match kind {
+            ResponseKind::Null => {
+                if let Some(s) = ResponseKind::try_decode_null_response(resp_bytes) {
+                    if s.word_length != self.mode_cache.word_packing {
+                        // Reset word length
+                        self.mode_cache.update_word_length(s.word_length);
+                        return Err(Error::WordLengthChanged);
+                    }
+
+                    status = Some(s);
+                    true
+                } else {
+                    false
+                }
+            }
+            ResponseKind::WriteRegister { .. } => {
+                ResponseKind::try_decode_write_register(resp_bytes) == Some(kind)
+            }
+            ResponseKind::ReadRegister { addr } => {
+                register_read = Some(RegisterData {
+                    address: addr,
+                    data: resp_bytes,
+                });
+                // Nothing can be checked here
+                true
+            }
+            r => ResponseKind::try_decode_simple_response(resp_bytes) == Some(r),
+        };
+
+        if !response_valid {
+            return Err(Error::UnexpectedResponse);
+        }
+
+        let sample_grab = if reset_frame {
+            None
+        } else {
+            Some(self.decode_samples(
+                &self.read_buf[self.mode_cache.word_len..self.mode_cache.word_len * (CHANNELS + 1)],
+            ))
+        };
+
+        Ok(Response {
+            sample_grab,
+            register_read,
+            status,
+        })
     }
 
     /// Panics if `buf` is not `self.word_len` * `CHANNELS` in length
     fn decode_samples(&self, buf: &[u8]) -> SampleGrab<CHANNELS> {
+        debug_assert!(buf.len() == self.mode_cache.word_len * CHANNELS);
+
         let mut data = [[0; 3]; CHANNELS];
         for (channel, sample) in data.iter_mut().enumerate() {
-            let word_idx = channel * self.word_len;
-            match self.word_packing {
+            let word_idx = channel * self.mode_cache.word_len;
+            match self.mode_cache.word_packing {
                 WordLength::Bits16 => {
                     sample.copy_from_slice(&[buf[word_idx], buf[word_idx + 1], 0]);
                 }
@@ -663,236 +610,234 @@ where
 
         SampleGrab { data }
     }
-
-    fn enqueue_sample_grab(&mut self, sample: SampleGrab<CHANNELS>) {
-        if self.sample_buf.is_full() {
-            self.sample_drop_count = self.sample_drop_count.saturating_add(1);
-        }
-        self.sample_buf.enqueue(sample);
-    }
 }
 
-#[doc(hidden)]
-pub trait RegisterAccess {
-    /// Read some device registers
-    /// Currently only reading 1 or 2 registers is supported
-    /// Panics if `buf` is not 2 or 4 in length
-    fn read_regs(&mut self, address: u8, buf: &mut [u8]) -> Result<(), Error>;
-    /// Write some device registers
-    /// Currently only writing 1 or 2 registers is supported
-    /// Returns the number of registers actually written
-    /// Panics if `buf` is not 2 or 4 in length
-    fn write_regs(&mut self, address: u8, buf: &[u8]) -> Result<usize, Error>;
-    /// Write the entire buf to device registers
-    /// Currently only writing 1 or 2 registers is supported
-    /// Panics if `buf` is not 2 or 4 in length
-    fn write_all_regs(&mut self, address: u8, buf: &[u8]) -> Result<(), Error>;
-}
-
-impl<I, W, const BUFSIZE: usize, const CHANNELS: usize> RegisterAccess
-    for Ads131m<I, W, BUFSIZE, CHANNELS>
+impl<S, W, D> Ads131m<S, W, D, 2>
 where
-    I: Interface<W>,
+    S: WordTransfer<W>,
     W: Copy,
+    D: InputPin,
 {
-    #[allow(clippy::cast_possible_truncation, clippy::identity_op)]
-    fn read_regs(&mut self, address: u8, buf: &mut [u8]) -> Result<(), Error> {
-        let reg_count = buf.len() / 2;
-        assert!(reg_count > 0 && reg_count < 3);
-
-        let mut bytes_written;
-
-        // Send command
-        let request_bytes = [
-            0xA0 | address >> 1,
-            (address & 0b1) << 7 | ((reg_count - 1) & 0x7F) as u8,
-        ];
-        self.write_buf[0..2].copy_from_slice(&request_bytes);
-        bytes_written = 2;
-
-        while bytes_written < self.word_len {
-            self.write_buf[bytes_written] = 0;
-            bytes_written += 1;
-        }
-
-        let read_len = self.word_len * (1 + CHANNELS);
-        self.transfer_frame(bytes_written, read_len, true)?;
-
-        // Ignore response
-        let samples =
-            self.decode_samples(&self.read_buf[self.word_len * 1..self.word_len * (CHANNELS + 1)]);
-        self.enqueue_sample_grab(samples);
-
-        // Fetch data
-        self.write_buf[0..2].copy_from_slice(&Command::Null.to_be_bytes());
-        bytes_written = 2;
-
-        while bytes_written < self.word_len {
-            self.write_buf[bytes_written] = 0;
-            bytes_written += 1;
-        }
-
-        let read_len = match reg_count {
-            1 => self.word_len * (1 + CHANNELS),
-            n => self.word_len * (n / 2),
-        };
-
-        self.transfer_frame(bytes_written, read_len, true)?;
-
-        match reg_count {
-            1 => {
-                buf[0..2].copy_from_slice(&self.read_buf[0..2]);
-                let samples = self.decode_samples(
-                    &self.read_buf[self.word_len * 1..self.word_len * (CHANNELS + 1)],
-                );
-                self.enqueue_sample_grab(samples);
-            }
-            n => {
-                if self.read_buf[0] != request_bytes[0] | 0x40
-                    || self.read_buf[1] != request_bytes[1]
-                {
-                    return Err(Error::UnexpectedResponse(Some([
-                        self.read_buf[0],
-                        self.read_buf[1],
-                    ])));
-                }
-
-                for i in 0..n {
-                    buf[i * 2..(i + 1) * 2].copy_from_slice(
-                        &self.read_buf[self.word_len * i..self.word_len * (i + 1)],
-                    );
-                    // No samples returned
-                }
-            }
-        }
-
-        Ok(())
+    /// Initialize an `ADS131M02` ADC driver
+    ///
+    /// The SPI interface must be configured for SPI mode 1 and the device must
+    /// have it's `MODE` register in the default (reset) state in order for
+    /// communications to work properly
+    pub fn open_ads131m02(intf: Interface<S, W, D>) -> Self {
+        Self::new(intf, Mode::default())
     }
 
-    // Returns the number of registers actually written
-    #[allow(clippy::cast_possible_truncation, clippy::identity_op)]
-    fn write_regs(&mut self, address: u8, buf: &[u8]) -> Result<usize, Error> {
-        let reg_count = buf.len() / 2;
-        assert!(reg_count > 0 && reg_count < 3);
-
-        let mut bytes_written;
-
-        // Send command
-        let request_bytes = [
-            0x60 | address >> 1,
-            (address & 0b1) << 7 | ((reg_count - 1) & 0x7F) as u8,
-        ];
-        self.write_buf[0..2].copy_from_slice(&request_bytes);
-        bytes_written = 2;
-
-        while bytes_written < self.word_len {
-            self.write_buf[bytes_written] = 0;
-            bytes_written += 1;
-        }
-
-        for i in 0..reg_count {
-            self.write_buf[bytes_written..bytes_written + 2]
-                .copy_from_slice(&buf[i * 2..(i + 1) * 2]);
-            bytes_written += 2;
-
-            while bytes_written < (self.word_len * (1 + i + 1)) {
-                self.write_buf[bytes_written] = 0;
-                bytes_written += 1;
-            }
-        }
-
-        let read_len = self.word_len * (1 + CHANNELS);
-        self.transfer_frame(bytes_written, read_len, true)?;
-
-        // Ignore response
-        let samples =
-            self.decode_samples(&self.read_buf[self.word_len * 1..self.word_len * (CHANNELS + 1)]);
-        self.enqueue_sample_grab(samples);
-
-        // Fetch data
-        self.write_buf[0..2].copy_from_slice(&Command::Null.to_be_bytes());
-        bytes_written = 2;
-
-        while bytes_written < self.word_len {
-            self.write_buf[bytes_written] = 0;
-            bytes_written += 1;
-        }
-
-        let read_len = (1 + CHANNELS) * self.word_len;
-        self.transfer_frame(bytes_written, read_len, true)?;
-
-        let samples =
-            self.decode_samples(&self.read_buf[self.word_len..self.word_len * (CHANNELS + 1)]);
-        self.enqueue_sample_grab(samples);
-        let resp = &self.read_buf[0..2];
-
-        if resp[0] != 0x40 | address >> 1 || resp[1] & 0x80 != address << 7 {
-            return Err(Error::UnexpectedResponse(Some(resp.try_into().unwrap())));
-        }
-
-        Ok(usize::from(resp[1] & 0x7F))
-    }
-
-    fn write_all_regs(&mut self, address: u8, buf: &[u8]) -> Result<(), Error> {
-        let reg_count = buf.len() / 2;
-        assert!(reg_count > 0 && reg_count < 3);
-
-        let mut regs_written = 0;
-        while regs_written < reg_count {
-            regs_written += self.write_regs(address, &buf[regs_written * 2..])?;
-        }
-
-        Ok(())
+    /// Initialize an `ADS131M02` ADC driver with a custom initial state
+    ///
+    /// This does not configure the `MODE` register, instead this allows
+    /// communication with a device already in a non-default communication configuration
+    ///
+    /// The SPI interface must be configured for SPI mode 1 in order for
+    /// communications to work properly
+    pub const fn open_ads131m02_with_mode(intf: Interface<S, W, D>, mode: Mode) -> Self {
+        Self::new(intf, mode)
     }
 }
 
-impl_channel!(AdcChannel0, channel_0, 0);
-impl_channel!(AdcChannel1, channel_1, 1);
-impl_channel!(AdcChannel2, channel_2, 2);
-impl_channel!(AdcChannel3, channel_3, 3);
-impl_channel!(AdcChannel4, channel_4, 4);
-impl_channel!(AdcChannel5, channel_5, 5);
-impl_channel!(AdcChannel6, channel_6, 6);
-impl_channel!(AdcChannel7, channel_7, 7);
+impl<S, W, D> Ads131m<S, W, D, 3>
+where
+    S: WordTransfer<W>,
+    W: Copy,
+    D: InputPin,
+{
+    /// Initialize an `ADS131M03` ADC driver
+    ///
+    /// The SPI interface must be configured for SPI mode 1 and the device must
+    /// have it's `MODE` register in the default (reset) state in order for
+    /// communications to work properly
+    pub fn open_ads131m03(intf: Interface<S, W, D>) -> Self {
+        Self::new(intf, Mode::default())
+    }
 
-impl_model!(ads131m02, 2, [AdcChannel0, AdcChannel1]);
-impl_model!(ads131m03, 3, [AdcChannel0, AdcChannel1, AdcChannel2]);
-impl_model!(
-    ads131m04,
-    4,
-    [AdcChannel0, AdcChannel1, AdcChannel2, AdcChannel3]
-);
-impl_model!(
-    ads131m06,
-    6,
-    [
-        AdcChannel0,
-        AdcChannel1,
-        AdcChannel2,
-        AdcChannel3,
-        AdcChannel4,
-        AdcChannel5
-    ]
-);
-impl_model!(
-    ads131m08,
-    8,
-    [
-        AdcChannel0,
-        AdcChannel1,
-        AdcChannel2,
-        AdcChannel3,
-        AdcChannel4,
-        AdcChannel5,
-        AdcChannel6,
-        AdcChannel7
-    ]
-);
+    /// Initialize an `ADS131M03` ADC driver with a custom initial state
+    ///
+    /// This does not configure the `MODE` register, instead this allows
+    /// communication with a device already in a non-default communication configuration
+    ///
+    /// The SPI interface must be configured for SPI mode 1 in order for
+    /// communications to work properly
+    pub const fn open_ads131m03_with_mode(intf: Interface<S, W, D>, mode: Mode) -> Self {
+        Self::new(intf, mode)
+    }
+}
+
+impl<S, W, D> Ads131m<S, W, D, 4>
+where
+    S: WordTransfer<W>,
+    W: Copy,
+    D: InputPin,
+{
+    /// Initialize an `ADS131M04` ADC driver
+    ///
+    /// The SPI interface must be configured for SPI mode 1 and the device must
+    /// have it's `MODE` register in the default (reset) state in order for
+    /// communications to work properly
+    pub fn open_ads131m04(intf: Interface<S, W, D>) -> Self {
+        Self::new(intf, Mode::default())
+    }
+
+    /// Initialize an `ADS131M04` ADC driver with a custom initial state
+    ///
+    /// This does not configure the `MODE` register, instead this allows
+    /// communication with a device already in a non-default communication configuration
+    ///
+    /// The SPI interface must be configured for SPI mode 1 in order for
+    /// communications to work properly
+    pub const fn open_ads131m04_with_mode(intf: Interface<S, W, D>, mode: Mode) -> Self {
+        Self::new(intf, mode)
+    }
+}
+
+impl<S, W, D> Ads131m<S, W, D, 6>
+where
+    S: WordTransfer<W>,
+    W: Copy,
+    D: InputPin,
+{
+    /// Initialize an `ADS131M06` ADC driver
+    ///
+    /// The SPI interface must be configured for SPI mode 1 and the device must
+    /// have it's `MODE` register in the default (reset) state in order for
+    /// communications to work properly
+    pub fn open_ads131m06(intf: Interface<S, W, D>) -> Self {
+        Self::new(intf, Mode::default())
+    }
+
+    /// Initialize an `ADS131M06` ADC driver with a custom initial state
+    ///
+    /// This does not configure the `MODE` register, instead this allows
+    /// communication with a device already in a non-default communication configuration
+    ///
+    /// The SPI interface must be configured for SPI mode 1 in order for
+    /// communications to work properly
+    pub const fn open_ads131m06_with_mode(intf: Interface<S, W, D>, mode: Mode) -> Self {
+        Self::new(intf, mode)
+    }
+}
+
+impl<S, W, D> Ads131m<S, W, D, 8>
+where
+    S: WordTransfer<W>,
+    W: Copy,
+    D: InputPin,
+{
+    /// Initialize an `ADS131M08` ADC driver
+    ///
+    /// The SPI interface must be configured for SPI mode 1 and the device must
+    /// have it's `MODE` register in the default (reset) state in order for
+    /// communications to work properly
+    pub fn open_ads131m08(intf: Interface<S, W, D>) -> Self {
+        Self::new(intf, Mode::default())
+    }
+
+    /// Initialize an `ADS131M08` ADC driver with a custom initial state
+    ///
+    /// This does not configure the `MODE` register, instead this allows
+    /// communication with a device already in a non-default communication configuration
+    ///
+    /// The SPI interface must be configured for SPI mode 1 in order for
+    /// communications to work properly
+    pub const fn open_ads131m08_with_mode(intf: Interface<S, W, D>, mode: Mode) -> Self {
+        Self::new(intf, mode)
+    }
+}
 
 #[cfg(test)]
+#[allow(clippy::too_many_lines)]
 mod tests {
     use super::*;
     use float_cmp::assert_approx_eq;
+
+    #[test]
+    fn message_encode() {
+        for (message, word_len, bytes, expected_len) in [
+            (
+                Command::null(),
+                2,
+                [0b0000_0000, 0b0000_0000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                2,
+            ),
+            (
+                Command::reset(),
+                2,
+                [0b0000_0000, 0b0001_0001, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                2,
+            ),
+            (
+                Command::standby(),
+                2,
+                [0b0000_0000, 0b0010_0010, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                2,
+            ),
+            (
+                Command::wakeup(),
+                2,
+                [0b0000_0000, 0b0011_0011, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                2,
+            ),
+            (
+                Command::lock(),
+                2,
+                [0b0000_0101, 0b0101_0101, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                2,
+            ),
+            (
+                Command::unlock(),
+                2,
+                [0b0000_0110, 0b0101_0101, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                2,
+            ),
+            (
+                Command::unlock(),
+                3,
+                [0b0000_0110, 0b0101_0101, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                3,
+            ),
+            (
+                Command::unlock(),
+                4,
+                [0b0000_0110, 0b0101_0101, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                4,
+            ),
+            // (
+            //     Command::w {
+            //         addr: 0,
+            //         data: [0x55, 0xAA],
+            //     },
+            //     2,
+            //     [0b0110_0000, 0b0000_0000, 0x55, 0xAA, 0, 0, 0, 0, 0, 0, 0, 0],
+            //     4,
+            // ),
+            // (
+            //     Command::WriteRegister {
+            //         addr: 0,
+            //         data: [0x55, 0xAA],
+            //     },
+            //     3,
+            //     [0b0110_0000, 0b0000_0000, 0, 0x55, 0xAA, 0, 0, 0, 0, 0, 0, 0],
+            //     6,
+            // ),
+            // (
+            //     Command::WriteRegister {
+            //         addr: 0x55,
+            //         data: [0x55, 0xAA],
+            //     },
+            //     4,
+            //     [0b0110_1010, 0b1000_0000, 0, 0, 0x55, 0xAA, 0, 0, 0, 0, 0, 0],
+            //     8,
+            // ),
+        ] {
+            let mut buf = [0u8; 12];
+            let len = message.encode_words(&mut buf, word_len);
+            assert_eq!(len, expected_len);
+            assert_eq!(buf, bytes);
+        }
+    }
 
     #[test]
     fn sample_to_ints() {
@@ -979,6 +924,81 @@ mod tests {
             .into_floats()[0],
             -1.0,
             epsilon = 1e-8
+        );
+    }
+
+    #[test]
+    fn response_decode() {
+        assert_eq!(
+            ResponseKind::try_decode_simple_response([0b1111_1111, 0b0010_0100]),
+            Some(ResponseKind::Reset)
+        );
+        assert_eq!(
+            ResponseKind::try_decode_simple_response([0b0000_0000, 0b0010_0010]),
+            Some(ResponseKind::Standby)
+        );
+        assert_eq!(
+            ResponseKind::try_decode_simple_response([0b0000_0000, 0b0011_0011]),
+            Some(ResponseKind::Wakeup)
+        );
+        assert_eq!(
+            ResponseKind::try_decode_simple_response([0b0000_0101, 0b0101_0101]),
+            Some(ResponseKind::Lock)
+        );
+        assert_eq!(
+            ResponseKind::try_decode_simple_response([0b0000_0110, 0b0101_0101]),
+            Some(ResponseKind::Unlock)
+        );
+        assert_eq!(
+            ResponseKind::try_decode_null_response([0b0000_0101, 0b0000_0000]),
+            Some(Status {
+                lock: false,
+                resync: false,
+                reg_map_crc_err: false,
+                spi_crc_err: false,
+                crc_type: CrcType::Ccitt,
+                reset: true,
+                word_length: WordLength::Bits24,
+                drdy0: false,
+                drdy1: false,
+                drdy2: false,
+                drdy3: false
+            })
+        );
+        assert_eq!(
+            ResponseKind::try_decode_null_response([0b1111_1111, 0b0000_1111]),
+            Some(Status {
+                lock: true,
+                resync: true,
+                reg_map_crc_err: true,
+                spi_crc_err: true,
+                crc_type: CrcType::Ansi,
+                reset: true,
+                word_length: WordLength::Bits32Signed,
+                drdy0: true,
+                drdy1: true,
+                drdy2: true,
+                drdy3: true
+            })
+        );
+        assert_eq!(
+            ResponseKind::try_decode_write_register([0b0100_0000, 0b0000_0000]),
+            Some(ResponseKind::WriteRegister { addr: 0, count: 1 })
+        );
+        assert_eq!(
+            ResponseKind::try_decode_write_register([0b0101_0101, 0b0010_1010]),
+            Some(ResponseKind::WriteRegister {
+                addr: 0x2A,
+                count: 43
+            })
+        );
+        assert_eq!(
+            ResponseKind::try_decode_simple_response([0b1111_1111, 0b0001_1111]),
+            None
+        );
+        assert_eq!(
+            ResponseKind::try_decode_simple_response([0b0000_0000, 0b0010_0000]),
+            None
         );
     }
 }
