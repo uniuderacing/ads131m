@@ -1,13 +1,14 @@
-//! Device Driver
+//! Low level message interface for communicating with the device
+
+use core::marker::PhantomData;
 
 use crate::error::Error;
-use crate::interface::{Interface, WordTransfer};
 use crate::register::{
     Address, Channel, ChannelSpecific, CrcType, Global, Mode, Status, WordLength,
 };
 
+use crate::spi::Transfer;
 use crc::{Crc, CRC_16_CMS, CRC_16_IBM_3740};
-use embedded_hal::digital::v2::InputPin;
 use ux::i24;
 
 // Since no const-generic math, we have to use the max possible buffer sizes
@@ -376,44 +377,21 @@ impl<const CHANNELS: usize> SampleGrab<CHANNELS> {
 /// TODO: Description
 ///
 /// TODO: Examples
-pub struct Ads131m<S: WordTransfer<W>, W: Copy, D: InputPin, const CHANNELS: usize> {
-    intf: Interface<S, W, D>,
+pub struct Ads131m<S: Transfer<W>, W: Copy, const CHANNELS: usize> {
+    intf: S,
+    _word: PhantomData<W>,
     read_buf: [u8; MAX_READ_LEN],
     write_buf: [u8; MAX_WRITE_LEN],
-    required_delay: Option<bool>,
     expected_response: ResponseKind,
     mode_cache: ModeCache,
 }
 
-impl<S, W, D, const CHANNELS: usize> Ads131m<S, W, D, CHANNELS>
+impl<S, W, const CHANNELS: usize> Ads131m<S, W, CHANNELS>
 where
-    S: WordTransfer<W>,
+    S: Transfer<W>,
     W: Copy,
-    D: InputPin,
 {
-    /// Check if the device is ready to communicate
-    ///
-    /// This will return `true` if DRDY is asserted and no delay is required after a reset
-    ///
-    /// This returning `true` does not guarantee that `communicate` will succeed
-    ///
-    /// # Errors
-    /// Will return [`Err(DrdyIOError)`](Error::DrdyIOError) if there is an error reading the DRDY pin
-    pub fn is_ready(&self) -> Result<bool, Error> {
-        if let Some(delay) = self.required_delay {
-            // TODO: Check if delay has elapsed and return if not
-            unimplemented!();
-            return Ok(false);
-        }
-
-        if !self.intf.is_drdy_asserted()? {
-            return Ok(false);
-        }
-
-        Ok(true)
-    }
-
-    /// Communicate with the device if it is ready to do so
+    /// Communicate with the device
     ///
     /// Commands must be frequently exchanged with the ADC to ensure sample grabs do not get dropped
     ///
@@ -422,15 +400,10 @@ where
     /// ***not*** in the exchange in which they were sent
     ///
     /// # Errors
-    /// Will return [`Err(WouldBlock)`](nb::Error::WouldBlock) if the device is not ready to communicate
     ///
-    /// Will return [`Err(Other)`](nb::Error::Other) if the communication failed
-    pub fn communicate(&mut self, command: Command) -> nb::Result<Response<CHANNELS>, Error> {
-        if !self.is_ready()? {
-            return Err(nb::Error::WouldBlock);
-        }
-
-        let write_len = self.encode_command(command).map_err(nb::Error::Other)?;
+    /// Will return `Err` if communication with the device failed
+    pub fn communicate(&mut self, command: Command) -> Result<Response<CHANNELS>, Error> {
+        let write_len = self.encode_command(command)?;
 
         // Get expected response for upcoming response, and store the new one
         let expected_response =
@@ -455,13 +428,11 @@ where
             &mut self.read_buf[..real_read_len],
         )?;
 
-        let resp = self
-            .decode_response(
-                read_len,
-                expected_response,
-                command.inner == CommandKind::Reset,
-            )
-            .map_err(nb::Error::Other)?;
+        let resp = self.decode_response(
+            read_len,
+            expected_response,
+            command.inner == CommandKind::Reset,
+        )?;
 
         match command.inner {
             CommandKind::WriteRegister {
@@ -475,12 +446,12 @@ where
         Ok(resp)
     }
 
-    const fn new(intf: Interface<S, W, D>, mode: Mode) -> Self {
+    const fn new(intf: S, mode: Mode) -> Self {
         Self {
             intf,
+            _word: PhantomData,
             read_buf: [0; MAX_READ_LEN],
             write_buf: [0; MAX_WRITE_LEN],
-            required_delay: None,
             expected_response: ResponseKind::Null,
             mode_cache: ModeCache::new(mode),
         }
@@ -612,18 +583,17 @@ where
     }
 }
 
-impl<S, W, D> Ads131m<S, W, D, 2>
+impl<S, W> Ads131m<S, W, 2>
 where
-    S: WordTransfer<W>,
+    S: Transfer<W>,
     W: Copy,
-    D: InputPin,
 {
     /// Initialize an `ADS131M02` ADC driver
     ///
     /// The SPI interface must be configured for SPI mode 1 and the device must
     /// have it's `MODE` register in the default (reset) state in order for
     /// communications to work properly
-    pub fn open_ads131m02(intf: Interface<S, W, D>) -> Self {
+    pub fn open_ads131m02(intf: S) -> Self {
         Self::new(intf, Mode::default())
     }
 
@@ -634,23 +604,22 @@ where
     ///
     /// The SPI interface must be configured for SPI mode 1 in order for
     /// communications to work properly
-    pub const fn open_ads131m02_with_mode(intf: Interface<S, W, D>, mode: Mode) -> Self {
+    pub const fn open_ads131m02_with_mode(intf: S, mode: Mode) -> Self {
         Self::new(intf, mode)
     }
 }
 
-impl<S, W, D> Ads131m<S, W, D, 3>
+impl<S, W> Ads131m<S, W, 3>
 where
-    S: WordTransfer<W>,
+    S: Transfer<W>,
     W: Copy,
-    D: InputPin,
 {
     /// Initialize an `ADS131M03` ADC driver
     ///
     /// The SPI interface must be configured for SPI mode 1 and the device must
     /// have it's `MODE` register in the default (reset) state in order for
     /// communications to work properly
-    pub fn open_ads131m03(intf: Interface<S, W, D>) -> Self {
+    pub fn open_ads131m03(intf: S) -> Self {
         Self::new(intf, Mode::default())
     }
 
@@ -661,23 +630,22 @@ where
     ///
     /// The SPI interface must be configured for SPI mode 1 in order for
     /// communications to work properly
-    pub const fn open_ads131m03_with_mode(intf: Interface<S, W, D>, mode: Mode) -> Self {
+    pub const fn open_ads131m03_with_mode(intf: S, mode: Mode) -> Self {
         Self::new(intf, mode)
     }
 }
 
-impl<S, W, D> Ads131m<S, W, D, 4>
+impl<S, W> Ads131m<S, W, 4>
 where
-    S: WordTransfer<W>,
+    S: Transfer<W>,
     W: Copy,
-    D: InputPin,
 {
     /// Initialize an `ADS131M04` ADC driver
     ///
     /// The SPI interface must be configured for SPI mode 1 and the device must
     /// have it's `MODE` register in the default (reset) state in order for
     /// communications to work properly
-    pub fn open_ads131m04(intf: Interface<S, W, D>) -> Self {
+    pub fn open_ads131m04(intf: S) -> Self {
         Self::new(intf, Mode::default())
     }
 
@@ -688,23 +656,22 @@ where
     ///
     /// The SPI interface must be configured for SPI mode 1 in order for
     /// communications to work properly
-    pub const fn open_ads131m04_with_mode(intf: Interface<S, W, D>, mode: Mode) -> Self {
+    pub const fn open_ads131m04_with_mode(intf: S, mode: Mode) -> Self {
         Self::new(intf, mode)
     }
 }
 
-impl<S, W, D> Ads131m<S, W, D, 6>
+impl<S, W> Ads131m<S, W, 6>
 where
-    S: WordTransfer<W>,
+    S: Transfer<W>,
     W: Copy,
-    D: InputPin,
 {
     /// Initialize an `ADS131M06` ADC driver
     ///
     /// The SPI interface must be configured for SPI mode 1 and the device must
     /// have it's `MODE` register in the default (reset) state in order for
     /// communications to work properly
-    pub fn open_ads131m06(intf: Interface<S, W, D>) -> Self {
+    pub fn open_ads131m06(intf: S) -> Self {
         Self::new(intf, Mode::default())
     }
 
@@ -715,23 +682,22 @@ where
     ///
     /// The SPI interface must be configured for SPI mode 1 in order for
     /// communications to work properly
-    pub const fn open_ads131m06_with_mode(intf: Interface<S, W, D>, mode: Mode) -> Self {
+    pub const fn open_ads131m06_with_mode(intf: S, mode: Mode) -> Self {
         Self::new(intf, mode)
     }
 }
 
-impl<S, W, D> Ads131m<S, W, D, 8>
+impl<S, W> Ads131m<S, W, 8>
 where
-    S: WordTransfer<W>,
+    S: Transfer<W>,
     W: Copy,
-    D: InputPin,
 {
     /// Initialize an `ADS131M08` ADC driver
     ///
     /// The SPI interface must be configured for SPI mode 1 and the device must
     /// have it's `MODE` register in the default (reset) state in order for
     /// communications to work properly
-    pub fn open_ads131m08(intf: Interface<S, W, D>) -> Self {
+    pub fn open_ads131m08(intf: S) -> Self {
         Self::new(intf, Mode::default())
     }
 
@@ -742,7 +708,7 @@ where
     ///
     /// The SPI interface must be configured for SPI mode 1 in order for
     /// communications to work properly
-    pub const fn open_ads131m08_with_mode(intf: Interface<S, W, D>, mode: Mode) -> Self {
+    pub const fn open_ads131m08_with_mode(intf: S, mode: Mode) -> Self {
         Self::new(intf, mode)
     }
 }

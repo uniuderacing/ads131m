@@ -50,8 +50,8 @@
 #![deny(unsafe_code)]
 #![no_std]
 
-pub mod device;
 pub mod error;
+pub mod interface;
 pub mod register;
 pub mod spi;
 
