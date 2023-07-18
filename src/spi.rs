@@ -1,35 +1,14 @@
+//! Helper extension of the `embedded_hal` SPI traits
+
 //! SPI interface abstraction traits
 
-use core::marker::PhantomData;
-
-use embedded_hal::digital::v2::InputPin;
 use embedded_hal::spi::FullDuplex;
 use nb;
 
 use crate::error::Error;
 
-/// Interface struct, combining a SPI interface and a DRDY pin
-pub struct Interface<S: WordTransfer<W>, W: Copy, D: InputPin> {
-    spi: S,
-    drdy: D,
-    word: PhantomData<W>,
-}
-
-impl<S, W, D> Interface<S, W, D>
-where
-    S: WordTransfer<W>,
-    W: Copy,
-    D: InputPin,
-{
-    /// Create a new interface
-    pub const fn new(spi: S, drdy: D) -> Self {
-        Self {
-            spi,
-            drdy,
-            word: PhantomData,
-        }
-    }
-
+/// A type that can make SPI transfers
+pub trait Transfer<W> {
     /// Perform a SPI transaction on the interface
     ///
     /// The transaction will be the length of the `send` or `receive` buffer, whichever is longer.
@@ -43,7 +22,15 @@ where
     ///
     /// # Panics
     /// Will panic if either buffer length is not a multiple of two.
-    pub fn transfer(&mut self, send: &[u8], receive: &mut [u8]) -> Result<(), Error> {
+    fn transfer(&mut self, send: &[u8], receive: &mut [u8]) -> Result<(), Error>;
+}
+
+impl<T, W> Transfer<W> for T
+where
+    T: WordTransfer<W>,
+    W: Copy,
+{
+    fn transfer(&mut self, send: &[u8], receive: &mut [u8]) -> Result<(), Error> {
         debug_assert!(send.len() % 2 == 0);
         debug_assert!(receive.len() % 2 == 0);
 
@@ -58,11 +45,11 @@ where
             if bytes_written < transfer_len {
                 // Cache the word that bytes_written currently points to
                 let word = word_cache.take().unwrap_or_else(|| {
-                    S::encode_word(&send[bytes_written..(bytes_written + S::WORD_LEN)])
+                    Self::encode_word(&send[bytes_written..(bytes_written + Self::WORD_LEN)])
                 });
 
-                match self.spi.write_word(word) {
-                    Ok(_) => bytes_written += S::WORD_LEN,
+                match self.write_word(word) {
+                    Ok(_) => bytes_written += Self::WORD_LEN,
                     Err(nb::Error::WouldBlock) => word_cache = Some(word),
                     Err(nb::Error::Other(e)) => return Err(e),
                 }
@@ -70,11 +57,8 @@ where
 
             // Read only if more has been written
             if bytes_written > bytes_read && bytes_read < transfer_len {
-                match self
-                    .spi
-                    .read_word(&mut receive[bytes_read..(bytes_read + S::WORD_LEN)])
-                {
-                    Ok(_) => bytes_read += S::WORD_LEN,
+                match self.read_word(&mut receive[bytes_read..(bytes_read + Self::WORD_LEN)]) {
+                    Ok(_) => bytes_read += Self::WORD_LEN,
                     Err(nb::Error::WouldBlock) => {}
                     Err(nb::Error::Other(e)) => return Err(e),
                 }
@@ -83,18 +67,10 @@ where
 
         Ok(())
     }
-
-    /// Read the state of the DRDY pin
-    ///
-    /// # Errors
-    /// Will return `Err` if the underlying GPIO interface encounters an error.
-    pub fn is_drdy_asserted(&self) -> Result<bool, Error> {
-        self.drdy.is_low().map_err(|_| Error::DrdyIOError)
-    }
 }
 
 /// Trait for interacting with an [`FullDuplex`] interface word by word
-pub trait WordTransfer<W: Copy> {
+pub trait WordTransfer<W> {
     /// Length of a word in bytes
     const WORD_LEN: usize;
 

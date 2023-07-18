@@ -52,8 +52,8 @@
 
 pub mod device;
 pub mod error;
-pub mod interface;
 pub mod register;
+pub mod spi;
 
 // pub use device::{
 //     AdcChannel0, AdcChannel1, AdcChannel2, AdcChannel3, AdcChannel4, AdcChannel5, AdcChannel6,
