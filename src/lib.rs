@@ -1,10 +1,5 @@
-//! This is an [`embedded-hal`] Rust driver for the Texas Instruments [`ADS131M`] series of simultaneously sampling
+//! This is an [`embedded_hal`] driver for the Texas Instruments [`ADS131M`] series of simultaneously sampling
 //! 24-bit delta-sigma analog-to-digital converters.
-//!
-//! However, currently only the ADS131M04 is supported.
-//!
-//! [`embedded-hal`]: https://github.com/rust-embedded/embedded-hal
-//! [`ADS131M`]: https://www.ti.com/sitesearch/en-us/docs/universalsearch.tsp?searchTerm=ADS131M
 //!
 //!
 //! This driver allows you to:
@@ -12,24 +7,17 @@
 //!
 //! ## The Devices
 //!
-//! TODO: Description
-//!
 //! Here are the different models of ADS131M ADCs:
 //!
-//! | Device    | Resolution | Max Sample Rate | Channels |
-//! |-----------|------------|-----------------|----------|
-//! | ADS131M02 | 24-bit     | 64 kSPS         | 2        |
-//! | ADS131M03 | 24-bit     | 64 kSPS         | 3        |
-//! | ADS131M04 | 24-bit     | 64 kSPS         | 4        |
-//! | ADS131M06 | 24-bit     | 32 kSPS         | 6        |
-//! | ADS131M08 | 24-bit     | 32 kSPS         | 8        |
+//! | Device    | Resolution | Max Sample Rate | Channels | Datasheet                                               |
+//! |-----------|------------|-----------------|----------|---------------------------------------------------------|
+//! | ADS131M02 | 24-bit     | 64 kSPS         | 2        | [Link](https://www.ti.com/lit/ds/symlink/ads131m02.pdf) |
+//! | ADS131M03 | 24-bit     | 64 kSPS         | 3        | [Link](https://www.ti.com/lit/ds/symlink/ads131m03.pdf) |
+//! | ADS131M04 | 24-bit     | 64 kSPS         | 4        | [Link](https://www.ti.com/lit/ds/symlink/ads131m04.pdf) |
+//! | ADS131M06 | 24-bit     | 32 kSPS         | 6        | [Link](https://www.ti.com/lit/ds/symlink/ads131m06.pdf) |
+//! | ADS131M08 | 24-bit     | 32 kSPS         | 8        | [Link](https://www.ti.com/lit/ds/symlink/ads131m08.pdf) |
 //!
-//! Datasheets:
-//! - [ADS131M02](https://www.ti.com/lit/ds/symlink/ads131m02.pdf)
-//! - [ADS131M03](https://www.ti.com/lit/ds/symlink/ads131m03.pdf)
-//! - [ADS131M04](https://www.ti.com/lit/ds/symlink/ads131m04.pdf)
-//! - [ADS131M06](https://www.ti.com/lit/ds/symlink/ads131m06.pdf)
-//! - [ADS131M08](https://www.ti.com/lit/ds/symlink/ads131m08.pdf)
+//! All of the models should work, however only the ADS131M04 has been tested
 //!
 //! ## Usage Examples
 //!
@@ -39,7 +27,10 @@
 //! unimplemented!();
 //! ```
 //!
+//!
+//! [`ADS131M`]: https://www.ti.com/sitesearch/en-us/docs/universalsearch.tsp?searchTerm=ADS131M
 
+#![deny(unsafe_code)]
 #![warn(
     clippy::all,
     clippy::pedantic,
@@ -47,17 +38,32 @@
     clippy::nursery,
     missing_docs
 )]
-#![deny(unsafe_code)]
+#![allow(clippy::multiple_crate_versions)] // TODO: Remove this once embedded-hal 1.0 drops
 #![no_std]
 
-pub mod error;
 pub mod interface;
 pub mod register;
 pub mod spi;
 
-// pub use device::{
-//     AdcChannel0, AdcChannel1, AdcChannel2, AdcChannel3, AdcChannel4, AdcChannel5, AdcChannel6,
-//     AdcChannel7, Ads131m,
-// };
-// pub use error::Error;
-// pub use interface::SpiTransfer;
+/// The main error type
+pub enum Error {
+    /// Error from the SPI interface
+    SpiIOError,
+    /// CRC checksum error on a received SPI message
+    ReceiveCrc {
+        /// The computed CRC checksum
+        computed: u16,
+        /// The received CRC checksum
+        received: u16,
+    },
+    /// The device reported a CRC checksum error on a sent SPI message
+    SendCrc,
+    /// An unexpected message was received from the device
+    UnexpectedResponse,
+    /// The SPI word length changed unexpectedly
+    ///
+    /// This can happen if changing the `MODE` register failed, or the device reset unexpectedly
+    WordLengthChanged,
+    /// An unsupported channel was specified in a command
+    UnsupportedChannel,
+}

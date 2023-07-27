@@ -1,4 +1,4 @@
-//! Types for configuring an ADS131M registers
+//! Types for configuring device registers
 
 use enum_iterator::{self, Sequence};
 use num_enum::{IntoPrimitive, TryFromPrimitive};

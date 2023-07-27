@@ -1,11 +1,9 @@
-//! Helper extension of the `embedded_hal` SPI traits
-
-//! SPI interface abstraction traits
+//! Traits for supporting SPI interfaces
 
 use embedded_hal::spi::FullDuplex;
 use nb;
 
-use crate::error::Error;
+use crate::Error;
 
 /// A type that can make SPI transfers
 pub trait Transfer<W> {

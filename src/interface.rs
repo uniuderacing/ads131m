@@ -2,12 +2,12 @@
 
 use core::marker::PhantomData;
 
-use crate::error::Error;
 use crate::register::{
     Address, Channel, ChannelSpecific, CrcType, Global, Mode, Status, WordLength,
 };
-
 use crate::spi::Transfer;
+use crate::Error;
+
 use crc::{Crc, CRC_16_CMS, CRC_16_IBM_3740};
 use ux::i24;
 
@@ -126,7 +126,7 @@ impl Command {
     ///
     /// Send this command if you just want to receive a sample grab
     #[must_use]
-    pub const fn null() -> Self {
+    pub const fn new_null() -> Self {
         Self {
             inner: CommandKind::Null,
         }
@@ -140,7 +140,7 @@ impl Command {
     /// After this command is sent the internal mode cache will be updated,
     /// which can change how the driver communicates
     #[must_use]
-    pub const fn reset() -> Self {
+    pub const fn new_reset() -> Self {
         Self {
             inner: CommandKind::Reset,
         }
@@ -150,7 +150,7 @@ impl Command {
     /// This disables all device channels and powers down non essential circuitry
     /// The sample clock should be disabled after this command to maximize power savings
     #[must_use]
-    pub const fn standby() -> Self {
+    pub const fn new_standby() -> Self {
         Self {
             inner: CommandKind::Standby,
         }
@@ -159,7 +159,7 @@ impl Command {
     /// Wake the device from standby mode
     /// The sample clock should be enabled after this command
     #[must_use]
-    pub const fn wakeup() -> Self {
+    pub const fn new_wakeup() -> Self {
         Self {
             inner: CommandKind::Wakeup,
         }
@@ -167,7 +167,7 @@ impl Command {
 
     /// Lock lock the device to only respond to the `null`, `read_register`, and `unlock` commands
     #[must_use]
-    pub const fn lock() -> Self {
+    pub const fn new_lock() -> Self {
         Self {
             inner: CommandKind::Lock,
         }
@@ -175,7 +175,7 @@ impl Command {
 
     /// Unlock the device after it has been locked
     #[must_use]
-    pub const fn unlock() -> Self {
+    pub const fn new_unlock() -> Self {
         Self {
             inner: CommandKind::Unlock,
         }
@@ -187,7 +187,7 @@ impl Command {
     /// which can change how the driver communicates
     #[must_use]
     #[allow(clippy::needless_pass_by_value)]
-    pub fn write_global_register<R: Global>(register: R) -> Self {
+    pub fn new_write_global_register<R: Global>(register: R) -> Self {
         Self {
             inner: CommandKind::WriteRegister {
                 addr: R::ADDRESS,
@@ -199,7 +199,7 @@ impl Command {
     /// Write to a channel-specific device register
     #[must_use]
     #[allow(clippy::needless_pass_by_value)]
-    pub fn write_channel_register<R: ChannelSpecific>(register: R, channel: Channel) -> Self {
+    pub fn new_write_channel_register<R: ChannelSpecific>(register: R, channel: Channel) -> Self {
         Self {
             inner: CommandKind::WriteRegister {
                 addr: R::address_for_channel(channel),
@@ -210,7 +210,7 @@ impl Command {
 
     /// Read from a device register
     #[must_use]
-    pub const fn read_register(address: Address) -> Self {
+    pub const fn new_read_register(address: Address) -> Self {
         Self {
             inner: CommandKind::ReadRegister { addr: address },
         }
@@ -303,7 +303,7 @@ pub struct RegisterData {
     pub data: [u8; 2],
 }
 
-/// A response from the ADC, usually containing
+/// A response from the ADC, usually containing a sample grab, a register read result or a a device status message
 #[must_use = "this `Response` may contain a `SampleGrab` and a `RegisterData`, which should be used"]
 pub struct Response<const CHANNELS: usize> {
     /// The returned sample grab, if any
@@ -332,7 +332,7 @@ impl<const CHANNELS: usize> SampleGrab<CHANNELS> {
         self.data
     }
 
-    /// Convert the sample data into signed integers between
+    /// Convert the sample data into signed integers
     #[must_use]
     pub fn into_ints(self) -> [i24; CHANNELS] {
         let mut values = [i24::new(0); CHANNELS];
@@ -372,7 +372,11 @@ impl<const CHANNELS: usize> SampleGrab<CHANNELS> {
     }
 }
 
-/// Driver
+/// Low level device message interface
+///
+/// This handles encoding and decoding SPI frames based on the current device state,
+/// but has no ability to determine when a a SPI transaction should occur.
+///
 ///
 /// TODO: Description
 ///
@@ -723,49 +727,49 @@ mod tests {
     fn message_encode() {
         for (message, word_len, bytes, expected_len) in [
             (
-                Command::null(),
+                Command::new_null(),
                 2,
                 [0b0000_0000, 0b0000_0000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
                 2,
             ),
             (
-                Command::reset(),
+                Command::new_reset(),
                 2,
                 [0b0000_0000, 0b0001_0001, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
                 2,
             ),
             (
-                Command::standby(),
+                Command::new_standby(),
                 2,
                 [0b0000_0000, 0b0010_0010, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
                 2,
             ),
             (
-                Command::wakeup(),
+                Command::new_wakeup(),
                 2,
                 [0b0000_0000, 0b0011_0011, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
                 2,
             ),
             (
-                Command::lock(),
+                Command::new_lock(),
                 2,
                 [0b0000_0101, 0b0101_0101, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
                 2,
             ),
             (
-                Command::unlock(),
+                Command::new_unlock(),
                 2,
                 [0b0000_0110, 0b0101_0101, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
                 2,
             ),
             (
-                Command::unlock(),
+                Command::new_unlock(),
                 3,
                 [0b0000_0110, 0b0101_0101, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
                 3,
             ),
             (
-                Command::unlock(),
+                Command::new_unlock(),
                 4,
                 [0b0000_0110, 0b0101_0101, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
                 4,
