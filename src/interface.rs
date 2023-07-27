@@ -50,15 +50,14 @@ impl ResponseKind {
     ///
     /// This will never return `ReadRegister` or `WriteRegister`
     /// as those cannot always be distinguished from other values
-    #[must_use]
-    const fn try_decode_simple_response(bytes: [u8; 2]) -> Option<Self> {
+    fn try_decode_simple_response(bytes: [u8; 2]) -> Result<Self, Option<Status>> {
         match bytes {
-            [0xFF, 0x24] => Some(Self::Reset),
-            [0x00, 0x22] => Some(Self::Standby),
-            [0x00, 0x33] => Some(Self::Wakeup),
-            [0x05, 0x55] => Some(Self::Lock),
-            [0x06, 0x55] => Some(Self::Unlock),
-            _ => None,
+            [0xFF, 0x24] => Ok(Self::Reset),
+            [0x00, 0x22] => Ok(Self::Standby),
+            [0x00, 0x33] => Ok(Self::Wakeup),
+            [0x05, 0x55] => Ok(Self::Lock),
+            [0x06, 0x55] => Ok(Self::Unlock),
+            _ => Err(Self::try_decode_null_response(bytes)),
         }
     }
 
@@ -74,13 +73,12 @@ impl ResponseKind {
 
     /// Try to decode a `WriteRegister`response from some bytes,
     /// returning `None` if the bytes do not represent a valid `WriteRegister`
-    #[must_use]
-    const fn try_decode_write_register(bytes: [u8; 2]) -> Option<Self> {
+    fn try_decode_write_register(bytes: [u8; 2]) -> Result<Self, Option<Status>> {
         if bytes[0] & 0xE0 != 0x40 {
-            return None;
+            return Err(Self::try_decode_null_response(bytes));
         }
 
-        Some(Self::WriteRegister {
+        Ok(Self::WriteRegister {
             addr: (bytes[0] & 0x1F) << 1 | bytes[1] >> 7,
             count: (bytes[1] & 0x7F) + 1,
         })
@@ -407,7 +405,7 @@ where
     ///
     /// Will return `Err` if communication with the device failed
     pub fn communicate(&mut self, command: Command) -> Result<Response<CHANNELS>, Error> {
-        let write_len = self.encode_command(command)?;
+        let mut write_len = self.encode_command(command)?;
 
         // Get expected response for upcoming response, and store the new one
         let expected_response =
@@ -417,6 +415,12 @@ where
             ResponseKind::ReadRegister { .. } => 1 + 1,
             _ => 1 + CHANNELS + 1,
         } * self.mode_cache.word_len;
+
+        // This should be fine as long as writes are shorter than reads
+        if write_len % 2 == 1 {
+            self.write_buf[write_len] = 0;
+            write_len += 1;
+        }
 
         // This will only happen for ADS131M03 with 24bit word len
         // This will avoid a panic, but I have no idea how that device will handle a padded transaction
@@ -468,18 +472,22 @@ where
             }
         }
 
-        let mut write_len: usize =
-            command.encode_words(&mut self.write_buf, self.mode_cache.word_len);
+        let cmd_len: usize = command.encode_words(&mut self.write_buf, self.mode_cache.word_len);
+        let mut write_len = cmd_len;
 
         if self.mode_cache.spi_crc_enable {
             let write_crc = self
                 .mode_cache
                 .crc_table
-                .checksum(&self.write_buf[..write_len]);
+                .checksum(&self.write_buf[..cmd_len]);
 
-            // Only write 2 bytes of CRC, transfer will pad remaining bytes out to word length
             self.write_buf[write_len..write_len + 2].copy_from_slice(&write_crc.to_be_bytes());
             write_len += 2;
+        }
+
+        while write_len < (cmd_len + self.mode_cache.word_len) {
+            self.write_buf[write_len] = 0;
+            write_len += 1;
         }
 
         Ok(write_len)
@@ -515,37 +523,42 @@ where
         let mut register_read = None;
 
         let resp_bytes = self.read_buf[..2].try_into().unwrap();
-        let response_valid = match kind {
-            ResponseKind::Null => {
-                if let Some(s) = ResponseKind::try_decode_null_response(resp_bytes) {
-                    if s.word_length != self.mode_cache.word_packing {
-                        // Reset word length
-                        self.mode_cache.update_word_length(s.word_length);
-                        return Err(Error::WordLengthChanged);
-                    }
-
-                    status = Some(s);
-                    true
-                } else {
-                    false
-                }
-            }
-            ResponseKind::WriteRegister { .. } => {
-                ResponseKind::try_decode_write_register(resp_bytes) == Some(kind)
-            }
+        let resp = match kind {
             ResponseKind::ReadRegister { addr } => {
                 register_read = Some(RegisterData {
                     address: addr,
                     data: resp_bytes,
                 });
                 // Nothing can be checked here
-                true
+                Ok(ResponseKind::ReadRegister { addr })
             }
-            r => ResponseKind::try_decode_simple_response(resp_bytes) == Some(r),
+            ResponseKind::WriteRegister { .. } => {
+                ResponseKind::try_decode_write_register(resp_bytes)
+            }
+            _ => ResponseKind::try_decode_simple_response(resp_bytes),
         };
 
-        if !response_valid {
-            return Err(Error::UnexpectedResponse);
+        match resp {
+            Ok(r) if r != kind => {
+                return Err(Error::UnexpectedResponse);
+            }
+            Ok(_) => {}
+            Err(Some(s)) => {
+                if s.word_length != self.mode_cache.word_packing {
+                    // Reset word length
+                    self.mode_cache.update_word_length(s.word_length);
+                    return Err(Error::WordLengthChanged);
+                } else if s.spi_crc_err {
+                    return Err(Error::SendCrc);
+                } else if kind != ResponseKind::Null {
+                    return Err(Error::UnexpectedResponse);
+                }
+
+                status = Some(s);
+            }
+            Err(None) => {
+                return Err(Error::UnexpectedResponse);
+            }
         }
 
         let sample_grab = if reset_frame {
@@ -901,27 +914,27 @@ mod tests {
     fn response_decode() {
         assert_eq!(
             ResponseKind::try_decode_simple_response([0b1111_1111, 0b0010_0100]),
-            Some(ResponseKind::Reset)
+            Ok(ResponseKind::Reset)
         );
         assert_eq!(
             ResponseKind::try_decode_simple_response([0b0000_0000, 0b0010_0010]),
-            Some(ResponseKind::Standby)
+            Ok(ResponseKind::Standby)
         );
         assert_eq!(
             ResponseKind::try_decode_simple_response([0b0000_0000, 0b0011_0011]),
-            Some(ResponseKind::Wakeup)
+            Ok(ResponseKind::Wakeup)
         );
         assert_eq!(
             ResponseKind::try_decode_simple_response([0b0000_0101, 0b0101_0101]),
-            Some(ResponseKind::Lock)
+            Ok(ResponseKind::Lock)
         );
         assert_eq!(
             ResponseKind::try_decode_simple_response([0b0000_0110, 0b0101_0101]),
-            Some(ResponseKind::Unlock)
+            Ok(ResponseKind::Unlock)
         );
         assert_eq!(
-            ResponseKind::try_decode_null_response([0b0000_0101, 0b0000_0000]),
-            Some(Status {
+            ResponseKind::try_decode_simple_response([0b0000_0101, 0b0000_0000]),
+            Err(Some(Status {
                 lock: false,
                 resync: false,
                 reg_map_crc_err: false,
@@ -933,11 +946,11 @@ mod tests {
                 drdy1: false,
                 drdy2: false,
                 drdy3: false
-            })
+            }))
         );
         assert_eq!(
-            ResponseKind::try_decode_null_response([0b1111_1111, 0b0000_1111]),
-            Some(Status {
+            ResponseKind::try_decode_simple_response([0b1111_1111, 0b0000_1111]),
+            Err(Some(Status {
                 lock: true,
                 resync: true,
                 reg_map_crc_err: true,
@@ -949,26 +962,42 @@ mod tests {
                 drdy1: true,
                 drdy2: true,
                 drdy3: true
-            })
+            }))
         );
         assert_eq!(
             ResponseKind::try_decode_write_register([0b0100_0000, 0b0000_0000]),
-            Some(ResponseKind::WriteRegister { addr: 0, count: 1 })
+            Ok(ResponseKind::WriteRegister { addr: 0, count: 1 })
         );
         assert_eq!(
             ResponseKind::try_decode_write_register([0b0101_0101, 0b0010_1010]),
-            Some(ResponseKind::WriteRegister {
+            Ok(ResponseKind::WriteRegister {
                 addr: 0x2A,
                 count: 43
             })
         );
         assert_eq!(
+            ResponseKind::try_decode_write_register([0b1111_1111, 0b0000_1111]),
+            Err(Some(Status {
+                lock: true,
+                resync: true,
+                reg_map_crc_err: true,
+                spi_crc_err: true,
+                crc_type: CrcType::Ansi,
+                reset: true,
+                word_length: WordLength::Bits32Signed,
+                drdy0: true,
+                drdy1: true,
+                drdy2: true,
+                drdy3: true
+            }))
+        );
+        assert_eq!(
             ResponseKind::try_decode_simple_response([0b1111_1111, 0b0001_1111]),
-            None
+            Err(None)
         );
         assert_eq!(
             ResponseKind::try_decode_simple_response([0b0000_0000, 0b0010_0000]),
-            None
+            Err(None)
         );
     }
 }
