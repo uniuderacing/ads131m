@@ -43,7 +43,11 @@ where
             if bytes_written < transfer_len {
                 // Cache the word that bytes_written currently points to
                 let word = word_cache.take().unwrap_or_else(|| {
-                    Self::encode_word(&send[bytes_written..(bytes_written + Self::WORD_LEN)])
+                    if bytes_written < send.len() {
+                        Self::encode_word(&send[bytes_written..(bytes_written + Self::WORD_LEN)])
+                    } else {
+                        Self::encode_word(&[0, 0][..Self::WORD_LEN])
+                    }
                 });
 
                 match self.write_word(word) {
