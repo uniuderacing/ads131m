@@ -97,8 +97,8 @@ struct ModeCache {
 impl ModeCache {
     const fn new(mode: Mode) -> Self {
         let crc_alg = match mode.crc_type {
-            CrcType::Ccitt => &CRC_16_CMS,
-            CrcType::Ansi => &CRC_16_IBM_3740,
+            CrcType::Ccitt => &CRC_16_IBM_3740,
+            CrcType::Ansi => &CRC_16_CMS,
         };
 
         Self {
