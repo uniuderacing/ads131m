@@ -115,6 +115,7 @@ impl ModeCache {
 
 /// A command to the device
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Command {
     inner: CommandKind,
 }
@@ -294,6 +295,8 @@ impl Command {
 }
 
 /// The result of a register read
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct RegisterData {
     /// The address that was read from
     pub address: Address,
@@ -302,6 +305,8 @@ pub struct RegisterData {
 }
 
 /// A response from the ADC, usually containing a sample grab, a register read result or a a device status message
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[must_use = "this `Response` may contain a `SampleGrab` and a `RegisterData`, which should be used"]
 pub struct Response<const CHANNELS: usize> {
     /// The returned sample grab, if any
@@ -313,6 +318,8 @@ pub struct Response<const CHANNELS: usize> {
 }
 
 /// A single ADC sample grab for all channels
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct SampleGrab<const CHANNELS: usize> {
     data: [[u8; 3]; CHANNELS],
 }

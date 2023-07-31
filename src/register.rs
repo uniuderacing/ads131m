@@ -4,6 +4,9 @@ use enum_iterator::{self, Sequence};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use ux::{u10, u24, u4};
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
 macro_rules! is_bit_set {
     ($word:expr, $bit:literal) => {
         ($word & (1 << $bit)) != 0
@@ -12,6 +15,7 @@ macro_rules! is_bit_set {
 
 /// An ADC channel
 #[derive(Debug, PartialEq, Eq, Clone, Copy, IntoPrimitive)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[repr(u8)]
 pub enum Channel {
     /// ADC channel 0
@@ -63,6 +67,7 @@ pub enum Channel {
 
 /// An address for an ADC register
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum Address {
     /// The device `ID` register
     Id,
@@ -208,6 +213,7 @@ where
 
 /// SPI Word size configuration
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive, Sequence)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[repr(u8)]
 pub enum WordLength {
     /// 16-bit words
@@ -238,6 +244,7 @@ impl WordLength {
 
 /// CRC implementation used for device communication
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive, Sequence)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[repr(u8)]
 pub enum CrcType {
     /// 16 bit CCITT.
@@ -252,6 +259,7 @@ pub enum CrcType {
 
 /// DRDY pin source selection
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive, Sequence)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[repr(u8)]
 pub enum DrdySource {
     /// Most lagging enabled channel
@@ -270,6 +278,7 @@ pub enum DrdySource {
 
 /// DRDY state when conversion data is not available
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive, Sequence)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[repr(u8)]
 pub enum DrdyNotReadyState {
     /// Logic high
@@ -284,6 +293,7 @@ pub enum DrdyNotReadyState {
 
 /// DRDY state when conversion data is available
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive, Sequence)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[repr(u8)]
 pub enum DrdyReadyState {
     /// Logic low
@@ -298,6 +308,7 @@ pub enum DrdyReadyState {
 
 /// Oversampling mode configuration
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive, Sequence)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[repr(u8)]
 pub enum OversamplingRatio {
     /// Oversampling ratio of 64
@@ -334,6 +345,7 @@ pub enum OversamplingRatio {
 
 /// Power mode setting
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive, Sequence)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[repr(u8)]
 pub enum PowerMode {
     /// Very low power mode
@@ -352,6 +364,7 @@ pub enum PowerMode {
 
 /// PGA gain setting
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive, Sequence)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[repr(u8)]
 pub enum PgaGain {
     /// 1x gain
@@ -386,6 +399,7 @@ pub enum PgaGain {
 ///
 /// Delay in modulator clock periods before measurement begins
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive, Sequence)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[repr(u8)]
 pub enum GlobalChopDelay {
     /// 2 modulator clock delay
@@ -443,6 +457,7 @@ pub enum GlobalChopDelay {
 /// Current-detect channel selection
 /// Channels required to trigger current-detect
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive, Sequence)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[repr(u8)]
 pub enum CurrentDetectChannels {
     /// Any channel
@@ -457,6 +472,7 @@ pub enum CurrentDetectChannels {
 
 /// Number of current-detect exceeded thresholds to trigger a detection
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive, Sequence)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[repr(u8)]
 pub enum CurrentDetectCount {
     /// 1 detection
@@ -489,6 +505,7 @@ pub enum CurrentDetectCount {
 
 /// Current-detect measurement length in conversion periods
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive, Sequence)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[repr(u8)]
 pub enum CurrentDetectLength {
     /// 128 conversion periods
@@ -521,6 +538,7 @@ pub enum CurrentDetectLength {
 
 /// DC block filter setting
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive, Sequence)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[repr(u8)]
 pub enum DcBlock {
     /// DC block filter disabled
@@ -575,6 +593,7 @@ pub enum DcBlock {
 
 /// Channel input selection
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive, Sequence)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[repr(u8)]
 pub enum ChannelMux {
     /// AINxP and AINxN
@@ -597,6 +616,7 @@ pub enum ChannelMux {
 ///
 /// This register is read only. Writing to it has no effect
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Id {
     /// Channel count
     pub channel_count: u4,
@@ -620,6 +640,7 @@ impl Global for Id {
 ///
 /// This register is read only. Writing to it has no effect
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[allow(clippy::struct_excessive_bools)]
 pub struct Status {
     /// Whether the SPI interface is locked
@@ -713,6 +734,7 @@ impl Default for Status {
 
 /// Device `MODE` register
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[allow(clippy::struct_excessive_bools)]
 pub struct Mode {
     /// Whether register map CRC checking is enabled
@@ -794,6 +816,7 @@ impl Default for Mode {
 
 /// Device `CLOCK` register
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[allow(clippy::struct_excessive_bools)]
 pub struct Clock {
     /// Channel 0 ADC enable
@@ -855,6 +878,7 @@ impl Default for Clock {
 
 /// Device `GAIN1` register
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Gain {
     /// PGA gain selection for channel 0
     pub pga_gain0: PgaGain,
@@ -891,6 +915,7 @@ impl Global for Gain {
 
 /// Device `CFG` register
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Config {
     /// Global-chop delay
     pub global_chop_delay: GlobalChopDelay,
@@ -940,6 +965,7 @@ impl Global for Config {
 
 /// Device `THRSHLD_MSB` and `THRSHLD_LSB` registers
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Threshold {
     /// Current-detect mode threshold
     pub current_detect_threshold: u24,
@@ -986,6 +1012,7 @@ impl Threshold {
 ///
 /// This is only one half of a [`Threshold`], use [`Threshold::from_parts`] to combine the two halves
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ThresholdMsb {
     bytes: [u8; 2],
 }
@@ -1006,6 +1033,7 @@ impl Global for ThresholdMsb {
 ///
 /// This is only one half of a [`Threshold`], use [`Threshold::from_parts`] to combine the two halves
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ThresholdLsb {
     bytes: [u8; 2],
 }
@@ -1024,6 +1052,7 @@ impl Global for ThresholdLsb {
 
 /// Device `CHx_CFG` register
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ChannelConfig {
     /// Channel 0 phase delay in modulator clock cycles
     pub phase: u10,
@@ -1060,6 +1089,7 @@ impl ChannelSpecific for ChannelConfig {
 
 /// Device `CHx_OCAL_MSB` and `CHx_OCAL_LSB` registers
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ChannelOffsetCal {
     /// Channel offset calibration
     pub offset: u24,
@@ -1102,6 +1132,7 @@ impl ChannelOffsetCal {
 ///
 /// This is only one half of a [`ChannelOffsetCal`], use [`ChannelOffsetCal::from_parts`] to combine the two halves
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ChannelOffsetCalMsb {
     bytes: [u8; 2],
 }
@@ -1124,6 +1155,7 @@ impl ChannelSpecific for ChannelOffsetCalMsb {
 ///
 /// This is only one half of a [`ChannelOffsetCal`], use [`ChannelOffsetCal::from_parts`] to combine the two halves
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ChannelOffsetCalLsb {
     bytes: [u8; 2],
 }
@@ -1144,6 +1176,7 @@ impl ChannelSpecific for ChannelOffsetCalLsb {
 
 /// Device `CHx_GCAL_MSB` and `CHx_GCAL_LSB` registers
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ChannelGainCal {
     /// Channel gain calibration
     pub gain: u24,
@@ -1192,6 +1225,7 @@ impl Default for ChannelGainCal {
 ///
 /// This is only one half of a [`ChannelGainCal`], use [`ChannelGainCal::from_parts`] to combine the two halves
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ChannelGainCalMsb {
     bytes: [u8; 2],
 }
@@ -1222,6 +1256,7 @@ impl Default for ChannelGainCalMsb {
 ///
 /// This is only one half of a [`ChannelGainCal`], use [`ChannelGainCal::from_parts`] to combine the two halves
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ChannelGainCalLsb {
     bytes: [u8; 2],
 }
@@ -1244,6 +1279,7 @@ impl ChannelSpecific for ChannelGainCalLsb {
 ///
 /// This register is read only. Writing to it has no effect
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct RegistryMapCrc {
     /// Register map CRC
     pub crc: u16,

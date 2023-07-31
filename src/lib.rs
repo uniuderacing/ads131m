@@ -47,6 +47,7 @@ pub mod spi;
 
 /// The main error type
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum Error {
     /// Error from the SPI interface
     SpiIOError,
