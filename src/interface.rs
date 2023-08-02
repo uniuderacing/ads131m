@@ -9,7 +9,11 @@ use crate::spi::Transfer;
 use crate::Error;
 
 use crc::{Crc, CRC_16_CMS, CRC_16_IBM_3740};
-use ux::i24;
+
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
+pub use crate::sample_grab::SampleGrab;
 
 // Since no const-generic math, we have to use the max possible buffer sizes
 // Max word len * (command + 1 register writes + CRC)
@@ -20,6 +24,7 @@ const MAX_WRITE_LEN: usize = 4 * (1 + 1 + 1);
 const MAX_READ_LEN: usize = 4 * (1 + 8 + 1);
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 enum CommandKind {
     Null,
     Reset,
@@ -315,66 +320,6 @@ pub struct Response<const CHANNELS: usize> {
     pub register_read: Option<RegisterData>,
     /// The current ADC status, if it was returned
     pub status: Option<Status>,
-}
-
-/// A single ADC sample grab for all channels
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct SampleGrab<const CHANNELS: usize> {
-    data: [[u8; 3]; CHANNELS],
-}
-
-impl<const CHANNELS: usize> SampleGrab<CHANNELS> {
-    /// Get a reference to the underlying sample bytes
-    #[must_use]
-    pub const fn as_bytes(&self) -> &[[u8; 3]; CHANNELS] {
-        &self.data
-    }
-
-    /// Extract the underlying sample bytes
-    #[must_use]
-    pub const fn to_bytes(self) -> [[u8; 3]; CHANNELS] {
-        self.data
-    }
-
-    /// Convert the sample data into signed integers
-    #[must_use]
-    pub fn into_ints(self) -> [i24; CHANNELS] {
-        let mut values = [i24::new(0); CHANNELS];
-        for (idx, value) in values.iter_mut().enumerate() {
-            let bytes = self.data[idx];
-            if bytes[0] >= 0x80 {
-                // Negative
-                *value = i24::new(i32::from_be_bytes([0xFF, bytes[0], bytes[1], bytes[2]]));
-            } else {
-                // Positive
-                *value = i24::new(i32::from_be_bytes([0, bytes[0], bytes[1], bytes[2]]));
-            }
-        }
-
-        values
-    }
-
-    /// Convert the sample data into floating point numbers between -1 and 1
-    #[must_use]
-    pub fn into_floats(self) -> [f64; CHANNELS] {
-        let mut values = [0.0; CHANNELS];
-        for (idx, value) in values.iter_mut().enumerate() {
-            let bytes = self.data[idx];
-            if bytes[0] >= 0x80 {
-                // Negative
-                *value = f64::from(i32::from_be_bytes([0xFF, bytes[0], bytes[1], bytes[2]]))
-                    / f64::from(i32::from(i24::MIN))
-                    * -1.0;
-            } else {
-                // Positive
-                *value = f64::from(i32::from_be_bytes([0, bytes[0], bytes[1], bytes[2]]))
-                    / f64::from(i32::from(i24::MAX));
-            }
-        }
-
-        values
-    }
 }
 
 /// Low level device message interface
@@ -741,7 +686,6 @@ where
 #[allow(clippy::too_many_lines)]
 mod tests {
     use super::*;
-    use float_cmp::assert_approx_eq;
 
     #[test]
     fn message_encode() {
@@ -794,127 +738,12 @@ mod tests {
                 [0b0000_0110, 0b0101_0101, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
                 4,
             ),
-            // (
-            //     Command::w {
-            //         addr: 0,
-            //         data: [0x55, 0xAA],
-            //     },
-            //     2,
-            //     [0b0110_0000, 0b0000_0000, 0x55, 0xAA, 0, 0, 0, 0, 0, 0, 0, 0],
-            //     4,
-            // ),
-            // (
-            //     Command::WriteRegister {
-            //         addr: 0,
-            //         data: [0x55, 0xAA],
-            //     },
-            //     3,
-            //     [0b0110_0000, 0b0000_0000, 0, 0x55, 0xAA, 0, 0, 0, 0, 0, 0, 0],
-            //     6,
-            // ),
-            // (
-            //     Command::WriteRegister {
-            //         addr: 0x55,
-            //         data: [0x55, 0xAA],
-            //     },
-            //     4,
-            //     [0b0110_1010, 0b1000_0000, 0, 0, 0x55, 0xAA, 0, 0, 0, 0, 0, 0],
-            //     8,
-            // ),
         ] {
             let mut buf = [0u8; 12];
             let len = message.encode_words(&mut buf, word_len);
             assert_eq!(len, expected_len);
             assert_eq!(buf, bytes);
         }
-    }
-
-    #[test]
-    fn sample_to_ints() {
-        assert_eq!(
-            SampleGrab {
-                data: [[0x7F, 0xFF, 0xFF]]
-            }
-            .into_ints(),
-            [i24::new(8_388_607)]
-        );
-        assert_eq!(
-            SampleGrab {
-                data: [[0x00, 0x00, 0x01]]
-            }
-            .into_ints(),
-            [i24::new(1)]
-        );
-        assert_eq!(
-            SampleGrab {
-                data: [[0x00, 0x00, 0x00]]
-            }
-            .into_ints(),
-            [i24::new(0)]
-        );
-        assert_eq!(
-            SampleGrab {
-                data: [[0xFF, 0xFF, 0xFF]]
-            }
-            .into_ints(),
-            [i24::new(-1)]
-        );
-        assert_eq!(
-            SampleGrab {
-                data: [[0x80, 0x00, 0x00]]
-            }
-            .into_ints(),
-            [i24::new(-8_388_608)]
-        );
-    }
-
-    #[test]
-    fn sample_to_floats() {
-        assert_approx_eq!(
-            f64,
-            SampleGrab {
-                data: [[0x7F, 0xFF, 0xFF]]
-            }
-            .into_floats()[0],
-            1.0,
-            epsilon = 1e-8
-        );
-        assert_approx_eq!(
-            f64,
-            SampleGrab {
-                data: [[0x00, 0x00, 0x01]]
-            }
-            .into_floats()[0],
-            0.000_000_119_209,
-            epsilon = 1e-8
-        );
-        assert_approx_eq!(
-            f64,
-            SampleGrab {
-                data: [[0x00, 0x00, 0x00]]
-            }
-            .into_floats()[0],
-            0.0,
-            epsilon = 1e-8
-        );
-        assert_approx_eq!(
-            f64,
-            SampleGrab {
-                data: [[0xFF, 0xFF, 0xFF]]
-            }
-            .into_floats()[0],
-            -0.000_000_119_209,
-            epsilon = 1e-8
-        );
-        assert_approx_eq!(
-            f64,
-            SampleGrab {
-                data: [[0x80, 0x00, 0x00]]
-            }
-            .into_floats()[0],
-            -1.0,
-            epsilon = 1e-8
-        );
     }
 
     #[test]

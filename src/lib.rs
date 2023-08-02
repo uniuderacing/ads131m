@@ -41,9 +41,16 @@
 #![allow(clippy::multiple_crate_versions)] // TODO: Remove this once embedded-hal 1.0 drops
 #![no_std]
 
+mod sample_grab;
+#[cfg(feature = "serde")]
+mod serde_support;
+
 pub mod interface;
 pub mod register;
 pub mod spi;
+
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 /// The main error type
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]

@@ -5,6 +5,9 @@ use num_enum::{IntoPrimitive, TryFromPrimitive};
 use ux::{u10, u24, u4};
 
 #[cfg(feature = "serde")]
+use crate::serde_support::{serde_u10, serde_u24, serde_u4};
+
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 macro_rules! is_bit_set {
@@ -619,6 +622,7 @@ pub enum ChannelMux {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Id {
     /// Channel count
+    #[cfg_attr(feature = "serde", serde(with = "serde_u4"))]
     pub channel_count: u4,
 }
 
@@ -968,6 +972,7 @@ impl Global for Config {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Threshold {
     /// Current-detect mode threshold
+    #[cfg_attr(feature = "serde", serde(with = "serde_u24"))]
     pub current_detect_threshold: u24,
 
     /// DC block filter setting
@@ -1055,6 +1060,7 @@ impl Global for ThresholdLsb {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ChannelConfig {
     /// Channel 0 phase delay in modulator clock cycles
+    #[cfg_attr(feature = "serde", serde(with = "serde_u10"))]
     pub phase: u10,
 
     /// DC block filter for channel 0 disable
@@ -1092,6 +1098,7 @@ impl ChannelSpecific for ChannelConfig {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ChannelOffsetCal {
     /// Channel offset calibration
+    #[cfg_attr(feature = "serde", serde(with = "serde_u24"))]
     pub offset: u24,
 }
 
@@ -1179,6 +1186,7 @@ impl ChannelSpecific for ChannelOffsetCalLsb {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ChannelGainCal {
     /// Channel gain calibration
+    #[cfg_attr(feature = "serde", serde(with = "serde_u24"))]
     pub gain: u24,
 }
 
