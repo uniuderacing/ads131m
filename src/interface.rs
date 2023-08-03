@@ -412,7 +412,7 @@ where
             _word: PhantomData,
             read_buf: [0; MAX_READ_LEN],
             write_buf: [0; MAX_WRITE_LEN],
-            expected_response: ResponseKind::Null,
+            expected_response: ResponseKind::Reset,
             mode_cache: ModeCache::new(mode),
         }
     }
