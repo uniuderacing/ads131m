@@ -220,6 +220,54 @@ impl Command {
         }
     }
 
+    /// Check if this is a null command
+    #[must_use]
+    pub const fn is_null(&self) -> bool {
+        matches!(self.inner, CommandKind::Null)
+    }
+
+    /// Check if this is a reset command
+    #[must_use]
+    pub const fn is_reset(&self) -> bool {
+        matches!(self.inner, CommandKind::Reset)
+    }
+
+    /// Check if this is a standby command
+    #[must_use]
+    pub const fn is_standby(&self) -> bool {
+        matches!(self.inner, CommandKind::Standby)
+    }
+
+    /// Check if this is a wakeup command
+    #[must_use]
+    pub const fn is_wakeup(&self) -> bool {
+        matches!(self.inner, CommandKind::Wakeup)
+    }
+
+    /// Check if this is a lock command
+    #[must_use]
+    pub const fn is_lock(&self) -> bool {
+        matches!(self.inner, CommandKind::Lock)
+    }
+
+    /// Check if this is a unlock command
+    #[must_use]
+    pub const fn is_unlock(&self) -> bool {
+        matches!(self.inner, CommandKind::Unlock)
+    }
+
+    /// Check if this is a write register command
+    #[must_use]
+    pub const fn is_write_register(&self) -> bool {
+        matches!(self.inner, CommandKind::WriteRegister { .. })
+    }
+
+    /// Check if this is a read register command
+    #[must_use]
+    pub const fn is_read_register(&self) -> bool {
+        matches!(self.inner, CommandKind::ReadRegister { .. })
+    }
+
     /// Return the channel for this command, if applicable
     const fn channel(self) -> Option<Channel> {
         match self.inner {
