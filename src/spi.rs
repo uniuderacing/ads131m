@@ -51,7 +51,7 @@ where
                 });
 
                 match self.write_word(word) {
-                    Ok(_) => bytes_written += Self::WORD_LEN,
+                    Ok(()) => bytes_written += Self::WORD_LEN,
                     Err(nb::Error::WouldBlock) => word_cache = Some(word),
                     Err(nb::Error::Other(e)) => return Err(e),
                 }
@@ -60,7 +60,7 @@ where
             // Read only if more has been written
             if bytes_written > bytes_read && bytes_read < transfer_len {
                 match self.read_word(&mut receive[bytes_read..(bytes_read + Self::WORD_LEN)]) {
-                    Ok(_) => bytes_read += Self::WORD_LEN,
+                    Ok(()) => bytes_read += Self::WORD_LEN,
                     Err(nb::Error::WouldBlock) => {}
                     Err(nb::Error::Other(e)) => return Err(e),
                 }
