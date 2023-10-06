@@ -1,7 +1,9 @@
 //! Types for configuring device registers
 
-use enum_iterator::{self, Sequence};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
+
+#[cfg(test)]
+use enum_iterator::Sequence;
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -337,8 +339,9 @@ where
 }
 
 /// SPI Word size configuration
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive, Sequence)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(test, derive(Sequence))]
 #[repr(u8)]
 pub enum WordLength {
     /// 16-bit words
@@ -368,8 +371,9 @@ impl WordLength {
 }
 
 /// CRC implementation used for device communication
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive, Sequence)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(test, derive(Sequence))]
 #[repr(u8)]
 pub enum CrcType {
     /// 16 bit CCITT.
@@ -383,8 +387,9 @@ pub enum CrcType {
 }
 
 /// DRDY pin source selection
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive, Sequence)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(test, derive(Sequence))]
 #[repr(u8)]
 pub enum DrdySource {
     /// Most lagging enabled channel
@@ -402,8 +407,9 @@ pub enum DrdySource {
 }
 
 /// DRDY state when conversion data is not available
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive, Sequence)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(test, derive(Sequence))]
 #[repr(u8)]
 pub enum DrdyNotReadyState {
     /// Logic high
@@ -417,8 +423,9 @@ pub enum DrdyNotReadyState {
 }
 
 /// DRDY state when conversion data is available
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive, Sequence)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(test, derive(Sequence))]
 #[repr(u8)]
 pub enum DrdyReadyState {
     /// Logic low
@@ -432,8 +439,9 @@ pub enum DrdyReadyState {
 }
 
 /// Oversampling mode configuration
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive, Sequence)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(test, derive(Sequence))]
 #[repr(u8)]
 pub enum OversamplingRatio {
     /// Oversampling ratio of 64
@@ -469,8 +477,9 @@ pub enum OversamplingRatio {
 }
 
 /// Power mode setting
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive, Sequence)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(test, derive(Sequence))]
 #[repr(u8)]
 pub enum PowerMode {
     /// Very low power mode
@@ -488,8 +497,9 @@ pub enum PowerMode {
 }
 
 /// PGA gain setting
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive, Sequence)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(test, derive(Sequence))]
 #[repr(u8)]
 pub enum PgaGain {
     /// 1x gain
@@ -523,8 +533,9 @@ pub enum PgaGain {
 /// Global chop delay selection
 ///
 /// Delay in modulator clock periods before measurement begins
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive, Sequence)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(test, derive(Sequence))]
 #[repr(u8)]
 pub enum GlobalChopDelay {
     /// 2 modulator clock delay
@@ -581,8 +592,9 @@ pub enum GlobalChopDelay {
 
 /// Current-detect channel selection
 /// Channels required to trigger current-detect
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive, Sequence)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(test, derive(Sequence))]
 #[repr(u8)]
 pub enum CurrentDetectChannels {
     /// Any channel
@@ -596,8 +608,9 @@ pub enum CurrentDetectChannels {
 }
 
 /// Number of current-detect exceeded thresholds to trigger a detection
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive, Sequence)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(test, derive(Sequence))]
 #[repr(u8)]
 pub enum CurrentDetectCount {
     /// 1 detection
@@ -629,8 +642,9 @@ pub enum CurrentDetectCount {
 }
 
 /// Current-detect measurement length in conversion periods
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive, Sequence)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(test, derive(Sequence))]
 #[repr(u8)]
 pub enum CurrentDetectLength {
     /// 128 conversion periods
@@ -662,8 +676,9 @@ pub enum CurrentDetectLength {
 }
 
 /// DC block filter setting
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive, Sequence)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(test, derive(Sequence))]
 #[repr(u8)]
 pub enum DcBlock {
     /// DC block filter disabled
@@ -717,8 +732,9 @@ pub enum DcBlock {
 }
 
 /// Channel input selection
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive, Sequence)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(test, derive(Sequence))]
 #[repr(u8)]
 pub enum ChannelMux {
     /// AINxP and AINxN
@@ -1425,6 +1441,8 @@ impl Global for RegistryMapCrc {
 
 #[cfg(test)]
 mod tests {
+    use enum_iterator;
+
     use super::*;
 
     #[test]
