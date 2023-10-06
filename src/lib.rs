@@ -42,8 +42,6 @@
 #![no_std]
 
 mod sample_grab;
-#[cfg(feature = "serde")]
-mod serde_support;
 
 pub mod interface;
 pub mod register;

@@ -2,10 +2,6 @@
 
 use enum_iterator::{self, Sequence};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
-use ux::{u10, u24, u4};
-
-#[cfg(feature = "serde")]
-use crate::serde_support::{serde_u10, serde_u24, serde_u4};
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -14,6 +10,132 @@ macro_rules! is_bit_set {
     ($word:expr, $bit:literal) => {
         ($word & (1 << $bit)) != 0
     };
+}
+
+/// An unsigned 10-bit integer
+///
+/// This can be a value in the range 0 to 1023
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[allow(non_camel_case_types)]
+pub struct u10 {
+    value: u16,
+}
+
+impl u10 {
+    /// Try to create a new `u10`
+    ///
+    /// `Some` is returned if `value` is less than 1023, otherwise `None` is returned
+    #[must_use]
+    pub const fn try_new(value: u16) -> Option<Self> {
+        if value < 0x3FF {
+            Some(Self { value })
+        } else {
+            None
+        }
+    }
+
+    /// Create a new `u10` from the lower 10 bits of `value`
+    ///
+    /// Any value above the lower 10 bits is masked off
+    #[must_use]
+    pub const fn new_masked(value: u16) -> Self {
+        Self {
+            value: value & 0x3FF,
+        }
+    }
+
+    /// Get the value as a `u16`
+    #[must_use]
+    pub const fn get(&self) -> u16 {
+        self.value
+    }
+}
+
+impl TryFrom<u16> for u10 {
+    type Error = &'static str;
+
+    fn try_from(value: u16) -> Result<Self, Self::Error> {
+        Self::try_new(value).ok_or("value out of range")
+    }
+}
+
+impl From<u10> for u16 {
+    fn from(value: u10) -> Self {
+        value.value
+    }
+}
+
+/// An unsigned 24-bit integer
+///
+/// This can be a value in the range 0 to 16,777,215
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[allow(non_camel_case_types)]
+pub struct u24 {
+    value: u32,
+}
+
+impl u24 {
+    /// Try to create a new `u24`
+    ///
+    /// `Some` is returned if `value` is less than 16,777,215 otherwise `None` is returned
+    #[must_use]
+    pub const fn try_new(value: u32) -> Option<Self> {
+        if value < 0xFF_FFFF {
+            Some(Self { value })
+        } else {
+            None
+        }
+    }
+
+    /// Create a new `u24` from the lower 24 bits of `value`
+    ///
+    /// Any value above the lower 24 bits is masked off
+    #[must_use]
+    pub const fn new_masked(value: u32) -> Self {
+        Self {
+            value: value & 0xFF_FFFF,
+        }
+    }
+
+    /// Get the value as a `u32`
+    #[must_use]
+    pub const fn get(&self) -> u32 {
+        self.value
+    }
+
+    /// Construct a new `u24` from its representation as a byte array
+    #[must_use]
+    pub fn from_be_bytes(bytes: [u8; 3]) -> Self {
+        let mut val_bytes = [0; 4];
+        val_bytes[1..].copy_from_slice(&bytes);
+
+        Self {
+            value: u32::from_be_bytes(val_bytes),
+        }
+    }
+
+    /// Return the representation of this `u24` as a byte array
+    #[must_use]
+    #[allow(clippy::missing_panics_doc)]
+    pub fn to_be_bytes(self) -> [u8; 3] {
+        self.value.to_be_bytes()[1..].try_into().unwrap()
+    }
+}
+
+impl TryFrom<u32> for u24 {
+    type Error = &'static str;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        Self::try_new(value).ok_or("value out of range")
+    }
+}
+
+impl From<u24> for u32 {
+    fn from(value: u24) -> Self {
+        value.value
+    }
 }
 
 /// An ADC channel
@@ -622,8 +744,8 @@ pub enum ChannelMux {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Id {
     /// Channel count
-    #[cfg_attr(feature = "serde", serde(with = "serde_u4"))]
-    pub channel_count: u4,
+    /// Should only be 2, 3, 4, 6, or 8
+    pub channel_count: u8,
 }
 
 impl Global for Id {
@@ -631,12 +753,12 @@ impl Global for Id {
 
     fn from_be_bytes(bytes: [u8; 2]) -> Self {
         Self {
-            channel_count: u4::new(bytes[0] & 0b1111),
+            channel_count: bytes[0] & 0b1111,
         }
     }
 
     fn to_be_bytes(self) -> [u8; 2] {
-        [u8::from(self.channel_count), 0]
+        [self.channel_count, 0]
     }
 }
 
@@ -972,7 +1094,6 @@ impl Global for Config {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Threshold {
     /// Current-detect mode threshold
-    #[cfg_attr(feature = "serde", serde(with = "serde_u24"))]
     pub current_detect_threshold: u24,
 
     /// DC block filter setting
@@ -1005,9 +1126,11 @@ impl Threshold {
     )]
     pub fn from_parts(msb: ThresholdMsb, lsb: ThresholdLsb) -> Self {
         Self {
-            current_detect_threshold: u24::from(msb.bytes[0]) << 16
-                | u24::from(msb.bytes[1]) << 8
-                | u24::from(lsb.bytes[0]),
+            current_detect_threshold: u24::from_be_bytes([
+                msb.bytes[0],
+                msb.bytes[1],
+                lsb.bytes[0],
+            ]),
             dc_block: DcBlock::try_from(lsb.bytes[1] & 0b1111).unwrap(),
         }
     }
@@ -1060,7 +1183,6 @@ impl Global for ThresholdLsb {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ChannelConfig {
     /// Channel 0 phase delay in modulator clock cycles
-    #[cfg_attr(feature = "serde", serde(with = "serde_u10"))]
     pub phase: u10,
 
     /// DC block filter for channel 0 disable
@@ -1077,7 +1199,7 @@ impl ChannelSpecific for ChannelConfig {
 
     fn from_be_bytes(bytes: [u8; 2]) -> Self {
         Self {
-            phase: u10::from(bytes[0]) << 2 | u10::from(bytes[1] >> 6),
+            phase: u10::new_masked(u16::from(bytes[0]) << 2 | u16::from(bytes[1]) >> 6),
             dc_block_disable: is_bit_set!(bytes[1], 2),
             mux: ChannelMux::try_from(bytes[1] & 0b11).unwrap(),
         }
@@ -1085,7 +1207,7 @@ impl ChannelSpecific for ChannelConfig {
 
     #[allow(clippy::cast_possible_truncation)]
     fn to_be_bytes(self) -> [u8; 2] {
-        let phase = u16::from(self.phase);
+        let phase = self.phase.get();
         [
             (phase >> 2) as u8,
             (phase << 6) as u8 | u8::from(self.dc_block_disable) << 2 | u8::from(self.mux),
@@ -1098,8 +1220,7 @@ impl ChannelSpecific for ChannelConfig {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ChannelOffsetCal {
     /// Channel offset calibration
-    #[cfg_attr(feature = "serde", serde(with = "serde_u24"))]
-    pub offset: u24,
+    offset: u24,
 }
 
 impl ChannelOffsetCal {
@@ -1128,9 +1249,7 @@ impl ChannelOffsetCal {
     )]
     pub fn from_parts(msb: ChannelOffsetCalMsb, lsb: ChannelOffsetCalLsb) -> Self {
         Self {
-            offset: u24::from(msb.bytes[0]) << 16
-                | u24::from(msb.bytes[1]) << 8
-                | u24::from(lsb.bytes[0]),
+            offset: u24::from_be_bytes([msb.bytes[0], msb.bytes[1], lsb.bytes[0]]),
         }
     }
 }
@@ -1186,7 +1305,6 @@ impl ChannelSpecific for ChannelOffsetCalLsb {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ChannelGainCal {
     /// Channel gain calibration
-    #[cfg_attr(feature = "serde", serde(with = "serde_u24"))]
     pub gain: u24,
 }
 
@@ -1216,9 +1334,7 @@ impl ChannelGainCal {
     )]
     pub fn from_parts(msb: ChannelGainCalMsb, lsb: ChannelGainCalLsb) -> Self {
         Self {
-            gain: u24::from(msb.bytes[0]) << 16
-                | u24::from(msb.bytes[1]) << 8
-                | u24::from(lsb.bytes[0]),
+            gain: u24::from_be_bytes([msb.bytes[0], msb.bytes[1], lsb.bytes[0]]),
         }
     }
 }
@@ -1313,19 +1429,14 @@ mod tests {
 
     #[test]
     fn id_decode() {
-        for (word, count) in [
+        for (word, channel_count) in [
             ([0x22, 0x00], 2),
             ([0x23, 0x00], 3),
             ([0x24, 0x00], 4),
             ([0x26, 0x00], 6),
             ([0x28, 0x00], 8),
         ] {
-            assert_eq!(
-                Id::from_be_bytes(word),
-                Id {
-                    channel_count: u4::new(count)
-                }
-            );
+            assert_eq!(Id::from_be_bytes(word), Id { channel_count });
         }
     }
 
@@ -1474,12 +1585,12 @@ mod tests {
     #[test]
     #[allow(clippy::similar_names)]
     fn threshold_round_trip() {
-        for thresholds in [
+        for t in [
             0, 2_097_152, 4_194_304, 6_291_456, 8_388_608, 10_485_760, 12_582_912, 14_680_064,
         ] {
             for dc_block in enum_iterator::all::<DcBlock>() {
                 let threshold = Threshold {
-                    current_detect_threshold: u24::new(thresholds),
+                    current_detect_threshold: u24::try_new(t).unwrap(),
                     dc_block,
                 };
 
@@ -1504,7 +1615,7 @@ mod tests {
             for dc_block_disable in [false, true] {
                 for mux in enum_iterator::all::<ChannelMux>() {
                     let config = ChannelConfig {
-                        phase: u10::new(phase),
+                        phase: u10::try_new(phase).expect("valid phase"),
                         dc_block_disable,
                         mux,
                     };
@@ -1548,7 +1659,7 @@ mod tests {
             0, 2_097_152, 4_194_304, 6_291_456, 8_388_608, 10_485_760, 12_582_912, 14_680_064,
         ] {
             let offset_cal = ChannelOffsetCal {
-                offset: u24::new(offset),
+                offset: u24::try_new(offset).unwrap(),
             };
 
             let (msb, lsb) = offset_cal.into_parts();
@@ -1585,7 +1696,7 @@ mod tests {
             0, 2_097_152, 4_194_304, 6_291_456, 8_388_608, 10_485_760, 12_582_912, 14_680_064,
         ] {
             let gain_cal = ChannelGainCal {
-                gain: u24::new(gain),
+                gain: u24::try_new(gain).unwrap(),
             };
 
             let (msb, lsb) = gain_cal.into_parts();
