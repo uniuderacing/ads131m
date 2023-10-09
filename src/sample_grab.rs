@@ -1,3 +1,5 @@
+use crate::register::i24;
+
 #[cfg(feature = "serde")]
 use serde::de::{Error, Visitor};
 #[cfg(feature = "serde")]
@@ -24,17 +26,23 @@ impl<const CHANNELS: usize> SampleGrab<CHANNELS> {
         self.data
     }
 
+    /// Convert the sample data into an array of signed 24-bit integers
+    #[must_use]
+    pub fn into_i24_array(self) -> [i24; CHANNELS] {
+        let mut values = [i24::new_masked(0); CHANNELS];
+        for (idx, value) in values.iter_mut().enumerate() {
+            *value = i24::from_be_bytes(self.data[idx]);
+        }
+
+        values
+    }
+
     /// Convert the sample data into an array of signed 32-bit integers
     #[must_use]
-    #[allow(clippy::cast_possible_wrap)]
     pub fn into_i32_array(self) -> [i32; CHANNELS] {
         let mut values = [0; CHANNELS];
         for (idx, value) in values.iter_mut().enumerate() {
-            let mut value_bytes = [0; 4];
-            value_bytes[1..].copy_from_slice(&self.data[idx]);
-
-            let unsigned = u32::from_be_bytes(value_bytes);
-            *value = ((unsigned << (32 - 24)) as i32) >> (32 - 24);
+            *value = i24::from_be_bytes(self.data[idx]).get();
         }
 
         values
@@ -45,16 +53,11 @@ impl<const CHANNELS: usize> SampleGrab<CHANNELS> {
     pub fn into_floats(self) -> [f64; CHANNELS] {
         let mut values = [0.0; CHANNELS];
         for (idx, value) in values.iter_mut().enumerate() {
-            let bytes = self.data[idx];
-            if bytes[0] >= 0x80 {
-                // Negative
-                *value = f64::from(i32::from_be_bytes([0xFF, bytes[0], bytes[1], bytes[2]]))
-                    / f64::from(-(1 << (24 - 1)))
-                    * -1.0;
+            let int = i24::from_be_bytes(self.data[idx]).get();
+            if int < 0 {
+                *value = f64::from(int) / f64::from(-i24::MIN);
             } else {
-                // Positive
-                *value = f64::from(i32::from_be_bytes([0, bytes[0], bytes[1], bytes[2]]))
-                    / f64::from((1 << (24 - 1)) - 1);
+                *value = f64::from(int) / f64::from(i24::MAX);
             }
         }
 

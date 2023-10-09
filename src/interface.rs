@@ -49,38 +49,42 @@ enum ResponseKind {
 }
 
 impl ResponseKind {
-    /// Try to decode a response from some bytes, returning `None` if the bytes do not match any response type
+    /// Try to decode a response from some bytes,
+    /// returning `Status` if the bytes do not match any static response, assuming the command failed
+    ///
+    /// The static responses are:
+    /// - Reset,
+    /// - Standby
+    /// - Wakeup
+    /// - Lock
+    /// - Unlock
     ///
     /// # Note
     ///
     /// This will never return `ReadRegister` or `WriteRegister`
     /// as those cannot always be distinguished from other values
-    fn try_decode_simple_response(bytes: [u8; 2]) -> Result<Self, Option<Status>> {
+    fn try_decode_static_response(bytes: [u8; 2]) -> Result<Self, Status> {
         match bytes {
             [0xFF, 0x24] => Ok(Self::Reset),
             [0x00, 0x22] => Ok(Self::Standby),
             [0x00, 0x33] => Ok(Self::Wakeup),
             [0x05, 0x55] => Ok(Self::Lock),
             [0x06, 0x55] => Ok(Self::Unlock),
-            _ => Err(Self::try_decode_null_response(bytes)),
+            _ => Err(Self::decode_null_response(bytes)),
         }
     }
 
-    /// Try to decode a status from some bytes, returning `None` if the bytes do not match a status message
+    /// Decode a status (null) from some bytes
     #[must_use]
-    fn try_decode_null_response(bytes: [u8; 2]) -> Option<Status> {
-        if (bytes[1] & 0xF0) == 0 {
-            Some(Status::from_be_bytes(bytes))
-        } else {
-            None
-        }
+    fn decode_null_response(bytes: [u8; 2]) -> Status {
+        Status::from_be_bytes(bytes)
     }
 
     /// Try to decode a `WriteRegister`response from some bytes,
-    /// returning `None` if the bytes do not represent a valid `WriteRegister`
-    fn try_decode_write_register(bytes: [u8; 2]) -> Result<Self, Option<Status>> {
+    /// returning `Status` if the bytes do not match a valid `WriteRegister`, assuming the command failed
+    fn try_decode_write_register(bytes: [u8; 2]) -> Result<Self, Status> {
         if bytes[0] & 0xE0 != 0x40 {
-            return Err(Self::try_decode_null_response(bytes));
+            return Err(Self::decode_null_response(bytes));
         }
 
         Ok(Self::WriteRegister {
@@ -360,7 +364,7 @@ pub struct RegisterData {
 /// A response from the ADC, usually containing a sample grab, a register read result or a a device status message
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[must_use = "this `Response` may contain a `SampleGrab` and a `RegisterData`, which should be used"]
+#[must_use = "this `Response` may contain a `SampleGrab` and/or a `RegisterData`, which should be used"]
 pub struct Response<const CHANNELS: usize> {
     /// The returned sample grab, if any
     pub sample_grab: Option<SampleGrab<CHANNELS>>,
@@ -535,15 +539,16 @@ where
             ResponseKind::WriteRegister { .. } => {
                 ResponseKind::try_decode_write_register(resp_bytes)
             }
-            _ => ResponseKind::try_decode_simple_response(resp_bytes),
+            _ => ResponseKind::try_decode_static_response(resp_bytes),
         };
 
         match resp {
-            Ok(r) if r != kind => {
-                return Err(Error::UnexpectedResponse);
+            Ok(k) => {
+                if k != kind {
+                    return Err(Error::UnexpectedResponse);
+                }
             }
-            Ok(_) => {}
-            Err(Some(s)) => {
+            Err(s) => {
                 if s.word_length != self.mode_cache.word_packing {
                     // Reset word length
                     self.mode_cache.update_word_length(s.word_length);
@@ -555,9 +560,6 @@ where
                 }
 
                 status = Some(s);
-            }
-            Err(None) => {
-                return Err(Error::UnexpectedResponse);
             }
         }
 
@@ -797,28 +799,28 @@ mod tests {
     #[test]
     fn response_decode() {
         assert_eq!(
-            ResponseKind::try_decode_simple_response([0b1111_1111, 0b0010_0100]),
+            ResponseKind::try_decode_static_response([0b1111_1111, 0b0010_0100]),
             Ok(ResponseKind::Reset)
         );
         assert_eq!(
-            ResponseKind::try_decode_simple_response([0b0000_0000, 0b0010_0010]),
+            ResponseKind::try_decode_static_response([0b0000_0000, 0b0010_0010]),
             Ok(ResponseKind::Standby)
         );
         assert_eq!(
-            ResponseKind::try_decode_simple_response([0b0000_0000, 0b0011_0011]),
+            ResponseKind::try_decode_static_response([0b0000_0000, 0b0011_0011]),
             Ok(ResponseKind::Wakeup)
         );
         assert_eq!(
-            ResponseKind::try_decode_simple_response([0b0000_0101, 0b0101_0101]),
+            ResponseKind::try_decode_static_response([0b0000_0101, 0b0101_0101]),
             Ok(ResponseKind::Lock)
         );
         assert_eq!(
-            ResponseKind::try_decode_simple_response([0b0000_0110, 0b0101_0101]),
+            ResponseKind::try_decode_static_response([0b0000_0110, 0b0101_0101]),
             Ok(ResponseKind::Unlock)
         );
         assert_eq!(
-            ResponseKind::try_decode_simple_response([0b0000_0101, 0b0000_0000]),
-            Err(Some(Status {
+            ResponseKind::try_decode_static_response([0b0000_0101, 0b0000_0000]),
+            Err(Status {
                 lock: false,
                 resync: false,
                 reg_map_crc_err: false,
@@ -829,12 +831,16 @@ mod tests {
                 drdy0: false,
                 drdy1: false,
                 drdy2: false,
-                drdy3: false
-            }))
+                drdy3: false,
+                drdy4: false,
+                drdy5: false,
+                drdy6: false,
+                drdy7: false,
+            })
         );
         assert_eq!(
-            ResponseKind::try_decode_simple_response([0b1111_1111, 0b0000_1111]),
-            Err(Some(Status {
+            ResponseKind::try_decode_static_response([0b1111_1111, 0b1111_1111]),
+            Err(Status {
                 lock: true,
                 resync: true,
                 reg_map_crc_err: true,
@@ -845,8 +851,12 @@ mod tests {
                 drdy0: true,
                 drdy1: true,
                 drdy2: true,
-                drdy3: true
-            }))
+                drdy3: true,
+                drdy4: true,
+                drdy5: true,
+                drdy6: true,
+                drdy7: true,
+            })
         );
         assert_eq!(
             ResponseKind::try_decode_write_register([0b0100_0000, 0b0000_0000]),
@@ -861,7 +871,7 @@ mod tests {
         );
         assert_eq!(
             ResponseKind::try_decode_write_register([0b1111_1111, 0b0000_1111]),
-            Err(Some(Status {
+            Err(Status {
                 lock: true,
                 resync: true,
                 reg_map_crc_err: true,
@@ -872,16 +882,52 @@ mod tests {
                 drdy0: true,
                 drdy1: true,
                 drdy2: true,
-                drdy3: true
-            }))
+                drdy3: true,
+                drdy4: false,
+                drdy5: false,
+                drdy6: false,
+                drdy7: false,
+            })
         );
         assert_eq!(
-            ResponseKind::try_decode_simple_response([0b1111_1111, 0b0001_1111]),
-            Err(None)
+            ResponseKind::try_decode_static_response([0b1111_1111, 0b0001_1111]),
+            Err(Status {
+                lock: true,
+                resync: true,
+                reg_map_crc_err: true,
+                spi_crc_err: true,
+                crc_type: CrcType::Ansi,
+                reset: true,
+                word_length: WordLength::Bits32Signed,
+                drdy0: true,
+                drdy1: true,
+                drdy2: true,
+                drdy3: true,
+                drdy4: true,
+                drdy5: false,
+                drdy6: false,
+                drdy7: false
+            })
         );
         assert_eq!(
-            ResponseKind::try_decode_simple_response([0b0000_0000, 0b0010_0000]),
-            Err(None)
+            ResponseKind::try_decode_static_response([0b0000_0000, 0b0010_0000]),
+            Err(Status {
+                lock: false,
+                resync: false,
+                reg_map_crc_err: false,
+                spi_crc_err: false,
+                crc_type: CrcType::Ccitt,
+                reset: false,
+                word_length: WordLength::Bits16,
+                drdy0: false,
+                drdy1: false,
+                drdy2: false,
+                drdy3: false,
+                drdy4: false,
+                drdy5: true,
+                drdy6: false,
+                drdy7: false
+            })
         );
     }
 }

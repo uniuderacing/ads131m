@@ -20,7 +20,7 @@ include = [
 edition = "2021"
 
 [dependencies]
-embedded-hal = { version = "0.2.7", features = ["unproven"] }
+embedded-hal = { version = "0.2.7" }
 nb = "1"
 num_enum = { version = "0.7", default-features = false, features = [
     "complex-expressions",

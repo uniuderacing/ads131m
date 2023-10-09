@@ -14,56 +14,82 @@ macro_rules! is_bit_set {
     };
 }
 
-/// An unsigned 10-bit integer
+/// A signed 10-bit integer
 ///
-/// This can be a value in the range 0 to 1023
+/// This can be a value in the range -512 to 511
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize), serde(transparent))]
 #[allow(non_camel_case_types)]
-pub struct u10 {
-    value: u16,
+pub struct i10 {
+    value: i16,
 }
 
-impl u10 {
-    /// Try to create a new `u10`
+impl i10 {
+    /// Minimum value
+    pub const MIN: i16 = -(1 << (10 - 1));
+    /// Maximum value
+    pub const MAX: i16 = (1 << (10 - 1)) - 1;
+
+    /// Try to create a new `i10`
     ///
-    /// `Some` is returned if `value` is less than 1023, otherwise `None` is returned
+    /// `Some` is returned if `value` is between -512 and 511 otherwise `None` is returned
     #[must_use]
-    pub const fn try_new(value: u16) -> Option<Self> {
-        if value < 0x3FF {
+    pub const fn try_new(value: i16) -> Option<Self> {
+        if value >= Self::MIN && value <= Self::MAX {
             Some(Self { value })
         } else {
             None
         }
     }
 
-    /// Create a new `u10` from the lower 10 bits of `value`
+    /// Create a new `i10` from the lower 10 bits of `value`
     ///
     /// Any value above the lower 10 bits is masked off
     #[must_use]
-    pub const fn new_masked(value: u16) -> Self {
+    #[allow(clippy::cast_possible_wrap, clippy::cast_sign_loss)]
+    pub const fn new_masked(value: i16) -> Self {
         Self {
-            value: value & 0x3FF,
+            // Sign extend to chop off the top bits
+            value: (((value as u16) << (16 - 10)) as i16) >> (16 - 10),
         }
     }
 
-    /// Get the value as a `u16`
+    /// Get the value as an `i16`
     #[must_use]
-    pub const fn get(&self) -> u16 {
+    pub const fn get(&self) -> i16 {
         self.value
+    }
+
+    /// Construct a new `i10` from its representation as a byte array, ignoring the bits above 10 bits
+    #[must_use]
+    #[allow(clippy::cast_possible_wrap)]
+    pub const fn from_be_bytes(bytes: [u8; 2]) -> Self {
+        let unsigned = u16::from_be_bytes(bytes);
+        let value = ((unsigned << (16 - 10)) as i16) >> (16 - 10);
+
+        Self { value }
+    }
+
+    /// Return the representation of this `i10` as a byte array, leaving the bits above 10 bits as 0
+    #[must_use]
+    #[allow(clippy::missing_panics_doc)]
+    pub const fn to_be_bytes(self) -> [u8; 2] {
+        let mut bytes: [u8; 2] = self.value.to_be_bytes();
+        bytes[0] &= 0x03;
+        bytes
     }
 }
 
-impl TryFrom<u16> for u10 {
+impl TryFrom<i16> for i10 {
     type Error = &'static str;
 
-    fn try_from(value: u16) -> Result<Self, Self::Error> {
+    fn try_from(value: i16) -> Result<Self, Self::Error> {
         Self::try_new(value).ok_or("value out of range")
     }
 }
 
-impl From<u10> for u16 {
-    fn from(value: u10) -> Self {
+impl From<i10> for i16 {
+    fn from(value: i10) -> Self {
         value.value
     }
 }
@@ -72,19 +98,24 @@ impl From<u10> for u16 {
 ///
 /// This can be a value in the range 0 to 16,777,215
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize), serde(transparent))]
 #[allow(non_camel_case_types)]
 pub struct u24 {
     value: u32,
 }
 
 impl u24 {
+    /// Minimum value
+    pub const MIN: u32 = 0;
+    /// Maximum value
+    pub const MAX: u32 = (1 << 24) - 1;
+
     /// Try to create a new `u24`
     ///
     /// `Some` is returned if `value` is less than 16,777,215 otherwise `None` is returned
     #[must_use]
     pub const fn try_new(value: u32) -> Option<Self> {
-        if value < 0xFF_FFFF {
+        if value <= Self::MAX {
             Some(Self { value })
         } else {
             None
@@ -97,7 +128,7 @@ impl u24 {
     #[must_use]
     pub const fn new_masked(value: u32) -> Self {
         Self {
-            value: value & 0xFF_FFFF,
+            value: value & Self::MAX,
         }
     }
 
@@ -136,6 +167,87 @@ impl TryFrom<u32> for u24 {
 
 impl From<u24> for u32 {
     fn from(value: u24) -> Self {
+        value.value
+    }
+}
+
+/// A signed 24-bit integer
+///
+/// This can be a value in the range -8,388,608 to 8,388,607
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize), serde(transparent))]
+#[allow(non_camel_case_types)]
+pub struct i24 {
+    value: i32,
+}
+
+impl i24 {
+    /// Minimum value
+    pub const MIN: i32 = -(1 << (24 - 1));
+    /// Maximum value
+    pub const MAX: i32 = (1 << (24 - 1)) - 1;
+
+    /// Try to create a new `i24`
+    ///
+    /// `Some` is returned if `value` is between -8,388,608 and 8,388,607 otherwise `None` is returned
+    #[must_use]
+    pub const fn try_new(value: i32) -> Option<Self> {
+        if value >= Self::MIN && value <= Self::MAX {
+            Some(Self { value })
+        } else {
+            None
+        }
+    }
+
+    /// Create a new `i24` from the lower 24 bits of `value`
+    ///
+    /// Any value above the lower 24 bits is masked off
+    #[must_use]
+    #[allow(clippy::cast_possible_wrap, clippy::cast_sign_loss)]
+    pub const fn new_masked(value: i32) -> Self {
+        Self {
+            // Sign extend to chop off the top bits
+            value: (((value as u32) << (32 - 24)) as i32) >> (32 - 24),
+        }
+    }
+
+    /// Get the value as an `i32`
+    #[must_use]
+    pub const fn get(&self) -> i32 {
+        self.value
+    }
+
+    /// Construct a new `u24` from its representation as a byte array
+    #[must_use]
+    #[allow(clippy::cast_possible_wrap)]
+    pub fn from_be_bytes(bytes: [u8; 3]) -> Self {
+        let mut value_bytes = [0; 4];
+        value_bytes[1..].copy_from_slice(&bytes);
+
+        let unsigned = u32::from_be_bytes(value_bytes);
+        let value = ((unsigned << (32 - 24)) as i32) >> (32 - 24);
+
+        Self { value }
+    }
+
+    /// Return the representation of this `i24` as a byte array
+    #[must_use]
+    #[allow(clippy::missing_panics_doc)]
+    pub fn to_be_bytes(self) -> [u8; 3] {
+        self.value.to_be_bytes()[1..].try_into().unwrap()
+    }
+}
+
+impl TryFrom<i32> for i24 {
+    type Error = &'static str;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        Self::try_new(value).ok_or("value out of range")
+    }
+}
+
+impl From<i24> for i32 {
+    fn from(value: i24) -> Self {
         value.value
     }
 }
@@ -204,8 +316,13 @@ pub enum Address {
     Mode,
     /// The device `CLOCK` register
     Clock,
-    /// The device `GAIN` register
-    Gain,
+    /// The device `GAIN1` register
+    Gain1,
+    /// The device `GAIN2` register
+    ///
+    /// Has no effect and will always read zero on
+    /// `ADS131M02`, `ADS131M03`, and `ADS131M04` devices
+    Gain2,
     /// The device `CFG` register
     Config,
     /// The device `THRSHLD_MSB` register
@@ -227,14 +344,15 @@ pub enum Address {
 }
 
 impl Address {
-    /// Get the address value for this `RegisterAddress`, if the channel is valid
+    /// Get the address value for this `RegisterAddress`
     pub(crate) const fn address(self) -> u8 {
         match self {
             Self::Id => 0x0,
             Self::Status => 0x1,
             Self::Mode => 0x2,
             Self::Clock => 0x3,
-            Self::Gain => 0x4,
+            Self::Gain1 => 0x4,
+            Self::Gain2 => 0x5,
             Self::Config => 0x6,
             Self::ThresholdMsb => 0x7,
             Self::ThresholdLsb => 0x8,
@@ -444,10 +562,6 @@ pub enum DrdyReadyState {
 #[cfg_attr(test, derive(Sequence))]
 #[repr(u8)]
 pub enum OversamplingRatio {
-    /// Oversampling ratio of 64
-    #[num_enum(alternatives = [9..16])]
-    Osr64 = 8,
-
     /// Oversampling ratio of 128
     Osr128 = 0,
 
@@ -807,17 +921,46 @@ pub struct Status {
     /// Data word length
     pub word_length: WordLength,
 
-    /// Channel 0 ADC data available indicator
+    /// Channel 0 ADC data is available
     pub drdy0: bool,
 
-    /// Channel 1 ADC data available indicator
+    /// Channel 1 ADC data is available
     pub drdy1: bool,
 
-    /// Channel 2 ADC data available indicator
+    /// Channel 2 ADC data is available
+    ///
+    /// Has no effect and will always read zero on `DS131M02` devices
     pub drdy2: bool,
 
-    /// Channel 3 ADC data available indicator
+    /// Channel 3 ADC data is available
+    ///
+    /// Has no effect and will always read zero on
+    /// `ADS131M02` and `ADS131M03` devices
     pub drdy3: bool,
+
+    /// Channel 4 ADC data is available
+    ///
+    /// Has no effect and will always read zero on
+    /// `ADS131M02`, `ADS131M03`, and `ADS131M04` devices
+    pub drdy4: bool,
+
+    /// Channel 5 ADC data is available
+    ///
+    /// Has no effect and will always read zero on
+    /// `ADS131M02`, `ADS131M03`, and `ADS131M04` devices
+    pub drdy5: bool,
+
+    /// Channel 6 ADC data is available
+    ///
+    /// Has no effect and will always read zero on
+    /// `ADS131M02`, `ADS131M03`, `ADS131M04`, and `ADS131M06` devices
+    pub drdy6: bool,
+
+    /// Channel 7 ADC data is available
+    ///
+    /// Has no effect and will always read zero on
+    /// `ADS131M02`, `ADS131M03`, `ADS131M04`, and `ADS131M06` devices
+    pub drdy7: bool,
 }
 
 impl Global for Status {
@@ -832,6 +975,10 @@ impl Global for Status {
             crc_type: CrcType::try_from((bytes[0] >> 3) & 0b1).unwrap(),
             reset: is_bit_set!(bytes[0], 2),
             word_length: WordLength::try_from(bytes[0] & 0b11).unwrap(),
+            drdy7: is_bit_set!(bytes[1], 7),
+            drdy6: is_bit_set!(bytes[1], 6),
+            drdy5: is_bit_set!(bytes[1], 5),
+            drdy4: is_bit_set!(bytes[1], 4),
             drdy3: is_bit_set!(bytes[1], 3),
             drdy2: is_bit_set!(bytes[1], 2),
             drdy1: is_bit_set!(bytes[1], 1),
@@ -848,7 +995,11 @@ impl Global for Status {
                 | u8::from(self.crc_type) << 3
                 | u8::from(self.reset) << 2
                 | u8::from(self.word_length),
-            u8::from(self.drdy3) << 3
+            u8::from(self.drdy7) << 7
+                | u8::from(self.drdy6) << 6
+                | u8::from(self.drdy5) << 5
+                | u8::from(self.drdy4) << 4
+                | u8::from(self.drdy3) << 3
                 | u8::from(self.drdy2) << 2
                 | u8::from(self.drdy1) << 1
                 | u8::from(self.drdy0),
@@ -870,6 +1021,10 @@ impl Default for Status {
             drdy1: false,
             drdy2: false,
             drdy3: false,
+            drdy4: false,
+            drdy5: false,
+            drdy6: false,
+            drdy7: false,
         }
     }
 }
@@ -968,10 +1123,63 @@ pub struct Clock {
     pub channel1_en: bool,
 
     /// Channel 2 ADC enable
+    ///
+    /// Has no effect on `DS131M02` devices
     pub channel2_en: bool,
 
     /// Channel 3 ADC enable
+    ///
+    /// Has no effect and will always read zero on
+    /// `ADS131M02` and `ADS131M03` devices
     pub channel3_en: bool,
+
+    /// Channel 4 ADC enable
+    ///
+    /// Has no effect and will always read zero on
+    /// `ADS131M02`, `ADS131M03`, and `ADS131M04` devices
+    pub channel4_en: bool,
+
+    /// Channel 5 ADC enable
+    ///
+    /// Has no effect and will always read zero on
+    /// `ADS131M02`, `ADS131M03`, and `ADS131M04` devices
+    pub channel5_en: bool,
+
+    /// Channel 6 ADC enable
+    ///
+    /// Has no effect and will always read zero on
+    /// `ADS131M02`, `ADS131M03`, `ADS131M04`, and `ADS131M06` devices
+    pub channel6_en: bool,
+
+    /// Channel 7 ADC enable
+    ///
+    /// Has no effect and will always read zero on
+    /// `ADS131M02`, `ADS131M03`, `ADS131M04`, and `ADS131M06` devices
+    pub channel7_en: bool,
+
+    /// Crystal oscillator disable
+    ///
+    /// Setting this to `true` disables the crystal oscillator
+    ///
+    /// Has no effect and will always read zero on
+    /// `ADS131M02`, `ADS131M03`, and `ADS131M04` devices
+    pub crystal_osc_disable: bool,
+
+    /// External reference enable
+    ///
+    /// Has no effect and will always read zero on
+    /// `ADS131M02`, `ADS131M03`, and `ADS131M04` devices
+    pub external_ref_enable: bool,
+
+    /// Turbo Mode enable
+    ///
+    /// When `false`, use the oversampling ratio selected in `oversampling_ratio`
+    ///
+    /// When `true`, use an oversampling ratio of 64
+    ///
+    /// Has no effect and will always read zero on
+    /// `ADS131M06` and `ADS131M08` devices
+    pub turbo_mode: bool,
 
     /// Modulator oversampling ratio
     pub oversampling_ratio: OversamplingRatio,
@@ -989,18 +1197,33 @@ impl Global for Clock {
             channel1_en: is_bit_set!(bytes[0], 1),
             channel2_en: is_bit_set!(bytes[0], 2),
             channel3_en: is_bit_set!(bytes[0], 3),
-            oversampling_ratio: OversamplingRatio::try_from((bytes[1] >> 2) & 0b1111).unwrap(),
+            channel4_en: is_bit_set!(bytes[0], 4),
+            channel5_en: is_bit_set!(bytes[0], 5),
+            channel6_en: is_bit_set!(bytes[0], 6),
+            channel7_en: is_bit_set!(bytes[0], 7),
+            crystal_osc_disable: is_bit_set!(bytes[1], 7),
+            external_ref_enable: is_bit_set!(bytes[1], 6),
+            turbo_mode: is_bit_set!(bytes[1], 5),
+            oversampling_ratio: OversamplingRatio::try_from((bytes[1] >> 2) & 0b111).unwrap(),
             power_mode: PowerMode::try_from(bytes[1] & 0b11).unwrap(),
         }
     }
 
     fn to_be_bytes(self) -> [u8; 2] {
         [
-            u8::from(self.channel3_en) << 3
+            u8::from(self.channel7_en) << 7
+                | u8::from(self.channel6_en) << 6
+                | u8::from(self.channel5_en) << 5
+                | u8::from(self.channel4_en) << 4
+                | u8::from(self.channel3_en) << 3
                 | u8::from(self.channel2_en) << 2
                 | u8::from(self.channel1_en) << 1
                 | u8::from(self.channel0_en),
-            u8::from(self.oversampling_ratio) << 2 | u8::from(self.power_mode),
+            u8::from(self.crystal_osc_disable) << 7
+                | u8::from(self.external_ref_enable) << 6
+                | u8::from(self.turbo_mode) << 5
+                | u8::from(self.oversampling_ratio) << 2
+                | u8::from(self.power_mode),
         ]
     }
 }
@@ -1012,6 +1235,13 @@ impl Default for Clock {
             channel1_en: true,
             channel2_en: true,
             channel3_en: true,
+            channel4_en: true,
+            channel5_en: true,
+            channel6_en: true,
+            channel7_en: true,
+            crystal_osc_disable: false,
+            external_ref_enable: false,
+            turbo_mode: false,
             oversampling_ratio: OversamplingRatio::default(),
             power_mode: PowerMode::default(),
         }
@@ -1021,7 +1251,7 @@ impl Default for Clock {
 /// Device `GAIN1` register
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct Gain {
+pub struct Gain1 {
     /// PGA gain selection for channel 0
     pub pga_gain0: PgaGain,
 
@@ -1029,14 +1259,19 @@ pub struct Gain {
     pub pga_gain1: PgaGain,
 
     /// PGA gain selection for channel 2
+    ///
+    /// Has no effect and will always read zero on `DS131M02` devices
     pub pga_gain2: PgaGain,
 
     /// PGA gain selection for channel 3
+    ///
+    /// Has no effect and will always read zero on
+    /// `ADS131M02` and `ADS131M03` devices
     pub pga_gain3: PgaGain,
 }
 
-impl Global for Gain {
-    const ADDRESS: Address = Address::Gain;
+impl Global for Gain1 {
+    const ADDRESS: Address = Address::Gain1;
 
     fn from_be_bytes(bytes: [u8; 2]) -> Self {
         Self {
@@ -1051,6 +1286,50 @@ impl Global for Gain {
         [
             u8::from(self.pga_gain2) | u8::from(self.pga_gain3) << 4,
             u8::from(self.pga_gain0) | u8::from(self.pga_gain1) << 4,
+        ]
+    }
+}
+
+/// Device `GAIN2` register
+///
+/// Has no effect and will always read zero on
+/// `ADS131M02`, `ADS131M03`, and `ADS131M04` devices
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct Gain2 {
+    /// PGA gain selection for channel 4
+    pub pga_gain4: PgaGain,
+
+    /// PGA gain selection for channel 5
+    pub pga_gain5: PgaGain,
+
+    /// PGA gain selection for channel 6
+    ///
+    /// Has no effect and will always read zero on `DS131M06` devices
+    pub pga_gain6: PgaGain,
+
+    /// PGA gain selection for channel 7
+    ///
+    /// Has no effect and will always read zero on `DS131M06` devices
+    pub pga_gain7: PgaGain,
+}
+
+impl Global for Gain2 {
+    const ADDRESS: Address = Address::Gain2;
+
+    fn from_be_bytes(bytes: [u8; 2]) -> Self {
+        Self {
+            pga_gain6: PgaGain::try_from(bytes[0] & 0b111).unwrap(),
+            pga_gain7: PgaGain::try_from((bytes[0] >> 4) & 0b111).unwrap(),
+            pga_gain4: PgaGain::try_from(bytes[1] & 0b111).unwrap(),
+            pga_gain5: PgaGain::try_from((bytes[1] >> 4) & 0b111).unwrap(),
+        }
+    }
+
+    fn to_be_bytes(self) -> [u8; 2] {
+        [
+            u8::from(self.pga_gain6) | u8::from(self.pga_gain7) << 4,
+            u8::from(self.pga_gain4) | u8::from(self.pga_gain5) << 4,
         ]
     }
 }
@@ -1110,7 +1389,7 @@ impl Global for Config {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Threshold {
     /// Current-detect mode threshold
-    pub current_detect_threshold: u24,
+    pub current_detect_threshold: i24,
 
     /// DC block filter setting
     pub dc_block: DcBlock,
@@ -1119,16 +1398,16 @@ pub struct Threshold {
 impl Threshold {
     /// Split this into the two [`Global`] halves that make up this `Threshold`
     #[must_use]
-    #[allow(clippy::cast_possible_truncation)]
+    #[allow(clippy::cast_possible_truncation, clippy::missing_panics_doc)]
     pub fn into_parts(self) -> (ThresholdMsb, ThresholdLsb) {
-        let threshold = u32::from(self.current_detect_threshold);
+        let threshold = self.current_detect_threshold.to_be_bytes();
 
         (
             ThresholdMsb {
-                bytes: [(threshold >> 16) as u8, (threshold >> 8) as u8],
+                bytes: threshold[0..2].try_into().unwrap(),
             },
             ThresholdLsb {
-                bytes: [threshold as u8, u8::from(self.dc_block)],
+                bytes: [threshold[2], u8::from(self.dc_block)],
             },
         )
     }
@@ -1142,7 +1421,7 @@ impl Threshold {
     )]
     pub fn from_parts(msb: ThresholdMsb, lsb: ThresholdLsb) -> Self {
         Self {
-            current_detect_threshold: u24::from_be_bytes([
+            current_detect_threshold: i24::from_be_bytes([
                 msb.bytes[0],
                 msb.bytes[1],
                 lsb.bytes[0],
@@ -1199,7 +1478,7 @@ impl Global for ThresholdLsb {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ChannelConfig {
     /// Channel 0 phase delay in modulator clock cycles
-    pub phase: u10,
+    pub phase: i10,
 
     /// DC block filter for channel 0 disable
     pub dc_block_disable: bool,
@@ -1215,7 +1494,7 @@ impl ChannelSpecific for ChannelConfig {
 
     fn from_be_bytes(bytes: [u8; 2]) -> Self {
         Self {
-            phase: u10::new_masked(u16::from(bytes[0]) << 2 | u16::from(bytes[1]) >> 6),
+            phase: i10::from_be_bytes([bytes[0] >> 6, bytes[0] << 2 | bytes[1] >> 6]),
             dc_block_disable: is_bit_set!(bytes[1], 2),
             mux: ChannelMux::try_from(bytes[1] & 0b11).unwrap(),
         }
@@ -1223,10 +1502,10 @@ impl ChannelSpecific for ChannelConfig {
 
     #[allow(clippy::cast_possible_truncation)]
     fn to_be_bytes(self) -> [u8; 2] {
-        let phase = self.phase.get();
+        let phase = self.phase.to_be_bytes();
         [
-            (phase >> 2) as u8,
-            (phase << 6) as u8 | u8::from(self.dc_block_disable) << 2 | u8::from(self.mux),
+            phase[0] << 6 | phase[1] >> 2,
+            phase[1] << 6 | u8::from(self.dc_block_disable) << 2 | u8::from(self.mux),
         ]
     }
 }
@@ -1236,22 +1515,22 @@ impl ChannelSpecific for ChannelConfig {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ChannelOffsetCal {
     /// Channel offset calibration
-    offset: u24,
+    offset: i24,
 }
 
 impl ChannelOffsetCal {
     /// Split this into the two [`ChannelSpecific`] halves that make up this `ChannelOffsetCal`
     #[must_use]
-    #[allow(clippy::cast_possible_truncation)]
+    #[allow(clippy::cast_possible_truncation, clippy::missing_panics_doc)]
     pub fn into_parts(self) -> (ChannelOffsetCalMsb, ChannelOffsetCalLsb) {
-        let offset = u32::from(self.offset);
+        let offset = self.offset.to_be_bytes();
 
         (
             ChannelOffsetCalMsb {
-                bytes: [(offset >> 16) as u8, (offset >> 8) as u8],
+                bytes: offset[0..2].try_into().unwrap(),
             },
             ChannelOffsetCalLsb {
-                bytes: [offset as u8, 0],
+                bytes: [offset[2], 0],
             },
         )
     }
@@ -1265,7 +1544,7 @@ impl ChannelOffsetCal {
     )]
     pub fn from_parts(msb: ChannelOffsetCalMsb, lsb: ChannelOffsetCalLsb) -> Self {
         Self {
-            offset: u24::from_be_bytes([msb.bytes[0], msb.bytes[1], lsb.bytes[0]]),
+            offset: i24::from_be_bytes([msb.bytes[0], msb.bytes[1], lsb.bytes[0]]),
         }
     }
 }
@@ -1321,22 +1600,28 @@ impl ChannelSpecific for ChannelOffsetCalLsb {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ChannelGainCal {
     /// Channel gain calibration
+    ///
+    /// The formula for channel gain is `2 * gain / 2^24`
+    ///
+    /// Since the maximum gain value is `2^24 - 1`, the gain range is `0 - 1.9999998807907104`
+    ///
+    /// The default value is `8,388,608`, which gives a gain of `1.0`
     pub gain: u24,
 }
 
 impl ChannelGainCal {
     /// Split this into the two [`ChannelSpecific`] halves that make up this `ChannelGainCal`
     #[must_use]
-    #[allow(clippy::cast_possible_truncation)]
+    #[allow(clippy::cast_possible_truncation, clippy::missing_panics_doc)]
     pub fn into_parts(self) -> (ChannelGainCalMsb, ChannelGainCalLsb) {
-        let gain = u32::from(self.gain);
+        let gain = self.gain.to_be_bytes();
 
         (
             ChannelGainCalMsb {
-                bytes: [(gain >> 16) as u8, (gain >> 8) as u8],
+                bytes: gain[0..2].try_into().unwrap(),
             },
             ChannelGainCalLsb {
-                bytes: [gain as u8, 0],
+                bytes: [gain[2], 0],
             },
         )
     }
@@ -1500,8 +1785,8 @@ mod tests {
 
     #[test]
     fn clock_default() {
-        assert_eq!(Clock::default().to_be_bytes(), [0x0F, 0x0E]);
-        assert_eq!(Clock::from_be_bytes([0x0F, 0x0E]), Clock::default());
+        assert_eq!(Clock::default().to_be_bytes(), [0xFF, 0x0E]);
+        assert_eq!(Clock::from_be_bytes([0xFF, 0x0E]), Clock::default());
     }
 
     #[test]
@@ -1514,6 +1799,13 @@ mod tests {
                         channel1_en: bools,
                         channel2_en: bools,
                         channel3_en: bools,
+                        channel4_en: bools,
+                        channel5_en: bools,
+                        channel6_en: bools,
+                        channel7_en: bools,
+                        crystal_osc_disable: bools,
+                        external_ref_enable: bools,
+                        turbo_mode: bools,
                         oversampling_ratio,
                         power_mode,
                     };
@@ -1525,22 +1817,42 @@ mod tests {
     }
 
     #[test]
-    fn gain_default() {
-        assert_eq!(Gain::default().to_be_bytes(), [0x00, 0x00]);
-        assert_eq!(Gain::from_be_bytes([0x00, 0x00]), Gain::default());
+    fn gain1_default() {
+        assert_eq!(Gain1::default().to_be_bytes(), [0x00, 0x00]);
+        assert_eq!(Gain1::from_be_bytes([0x00, 0x00]), Gain1::default());
     }
 
     #[test]
-    fn gain_round_trip() {
+    fn gain1_round_trip() {
         for gains in enum_iterator::all::<PgaGain>() {
-            let gain = Gain {
+            let gain = Gain1 {
                 pga_gain0: gains,
                 pga_gain1: gains,
                 pga_gain2: gains,
                 pga_gain3: gains,
             };
 
-            assert_eq!(gain, Gain::from_be_bytes(gain.to_be_bytes()));
+            assert_eq!(gain, Gain1::from_be_bytes(gain.to_be_bytes()));
+        }
+    }
+
+    #[test]
+    fn gain2_default() {
+        assert_eq!(Gain2::default().to_be_bytes(), [0x00, 0x00]);
+        assert_eq!(Gain2::from_be_bytes([0x00, 0x00]), Gain2::default());
+    }
+
+    #[test]
+    fn gain2_round_trip() {
+        for gains in enum_iterator::all::<PgaGain>() {
+            let gain = Gain2 {
+                pga_gain4: gains,
+                pga_gain5: gains,
+                pga_gain6: gains,
+                pga_gain7: gains,
+            };
+
+            assert_eq!(gain, Gain2::from_be_bytes(gain.to_be_bytes()));
         }
     }
 
@@ -1604,11 +1916,12 @@ mod tests {
     #[allow(clippy::similar_names)]
     fn threshold_round_trip() {
         for t in [
-            0, 2_097_152, 4_194_304, 6_291_456, 8_388_608, 10_485_760, 12_582_912, 14_680_064,
+            -8_388_608, -6_291_456, -4_194_304, -2_097_152, 0, 2_097_151, 4_194_303, 6_291_453,
+            8_388_607,
         ] {
             for dc_block in enum_iterator::all::<DcBlock>() {
                 let threshold = Threshold {
-                    current_detect_threshold: u24::try_new(t).unwrap(),
+                    current_detect_threshold: i24::try_new(t).unwrap(),
                     dc_block,
                 };
 
@@ -1629,11 +1942,11 @@ mod tests {
 
     #[test]
     fn channel_config_round_trip() {
-        for phase in [0, 128, 256, 384, 512, 640, 768, 896] {
+        for phase in [-512, -384, -256, -128, 0, 128, 256, 384, 511] {
             for dc_block_disable in [false, true] {
                 for mux in enum_iterator::all::<ChannelMux>() {
                     let config = ChannelConfig {
-                        phase: u10::try_new(phase).expect("valid phase"),
+                        phase: i10::try_new(phase).expect("valid phase"),
                         dc_block_disable,
                         mux,
                     };
@@ -1674,10 +1987,11 @@ mod tests {
     #[allow(clippy::similar_names)]
     fn channel_offset_cal_round_trip() {
         for offset in [
-            0, 2_097_152, 4_194_304, 6_291_456, 8_388_608, 10_485_760, 12_582_912, 14_680_064,
+            -8_388_608, -6_291_456, -4_194_304, -2_097_152, 0, 2_097_151, 4_194_303, 6_291_453,
+            8_388_607,
         ] {
             let offset_cal = ChannelOffsetCal {
-                offset: u24::try_new(offset).unwrap(),
+                offset: i24::try_new(offset).unwrap(),
             };
 
             let (msb, lsb) = offset_cal.into_parts();
