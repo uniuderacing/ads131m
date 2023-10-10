@@ -1515,7 +1515,7 @@ impl ChannelSpecific for ChannelConfig {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ChannelOffsetCal {
     /// Channel offset calibration
-    offset: i24,
+    pub offset: i24,
 }
 
 impl ChannelOffsetCal {
