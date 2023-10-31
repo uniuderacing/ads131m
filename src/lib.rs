@@ -43,6 +43,7 @@
 
 mod sample_grab;
 
+pub mod int;
 pub mod interface;
 pub mod register;
 pub mod spi;

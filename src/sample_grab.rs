@@ -1,4 +1,4 @@
-use crate::register::i24;
+use crate::int::i24;
 
 #[cfg(feature = "serde")]
 use serde::de::{Error, Visitor};
