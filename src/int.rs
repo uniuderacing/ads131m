@@ -1,13 +1,15 @@
 //! Basic integer types used by the ADC
 //! TODO: Better doc
 
+use core::fmt::{Debug, Formatter};
+
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 /// A signed 10-bit integer
 ///
 /// This can be a value in the range `[-512, 511]`
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize), serde(transparent))]
 #[allow(non_camel_case_types)]
 pub struct i10(i16);
@@ -80,6 +82,12 @@ impl i10 {
     }
 }
 
+impl Debug for i10 {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 impl TryFrom<i16> for i10 {
     type Error = &'static str;
 
@@ -97,7 +105,7 @@ impl From<i10> for i16 {
 /// An unsigned 24-bit integer
 ///
 /// This can be a value in the range 0 to 16,777,215
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize), serde(transparent))]
 #[allow(non_camel_case_types)]
 pub struct u24(u32);
@@ -161,6 +169,12 @@ impl u24 {
     }
 }
 
+impl Debug for u24 {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 impl TryFrom<u32> for u24 {
     type Error = &'static str;
 
@@ -178,7 +192,7 @@ impl From<u24> for u32 {
 /// A signed 24-bit integer
 ///
 /// This can be a value in the range -8,388,608 to 8,388,607
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize), serde(transparent))]
 #[allow(non_camel_case_types)]
 pub struct i24(i32);
@@ -249,6 +263,12 @@ impl i24 {
     #[allow(clippy::missing_panics_doc)]
     pub fn to_be_bytes(self) -> [u8; 3] {
         self.0.to_be_bytes()[1..].try_into().unwrap()
+    }
+}
+
+impl Debug for i24 {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        self.0.fmt(f)
     }
 }
 
