@@ -194,7 +194,6 @@ impl Command {
     /// If the device's [`Mode`] register is written, the internal mode cache will be updated,
     /// which can change how the driver communicates
     #[must_use]
-    #[allow(clippy::needless_pass_by_value)]
     pub fn new_write_global_register<R: Global>(register: R) -> Self {
         Self {
             inner: CommandKind::WriteRegister {
@@ -206,7 +205,6 @@ impl Command {
 
     /// Write to a channel-specific device register
     #[must_use]
-    #[allow(clippy::needless_pass_by_value)]
     pub fn new_write_channel_register<R: ChannelSpecific>(register: R, channel: Channel) -> Self {
         Self {
             inner: CommandKind::WriteRegister {

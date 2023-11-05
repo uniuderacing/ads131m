@@ -1162,13 +1162,12 @@ pub struct Threshold {
 impl Threshold {
     /// Split this into the two [`Global`] halves that make up this `Threshold`
     #[must_use]
-    #[allow(clippy::cast_possible_truncation, clippy::missing_panics_doc)]
     pub fn into_parts(self) -> (ThresholdMsb, ThresholdLsb) {
         let threshold = self.current_detect_threshold.to_be_bytes();
 
         (
             ThresholdMsb {
-                bytes: threshold[0..2].try_into().unwrap(),
+                bytes: [threshold[0], threshold[1]],
             },
             ThresholdLsb {
                 bytes: [threshold[2], u8::from(self.dc_block)],
@@ -1178,11 +1177,7 @@ impl Threshold {
 
     /// Build a `Threshold` from it's two [`Global`] halves
     #[must_use]
-    #[allow(
-        clippy::missing_panics_doc,
-        clippy::needless_pass_by_value,
-        clippy::similar_names
-    )]
+    #[allow(clippy::missing_panics_doc, clippy::similar_names)]
     pub fn from_parts(msb: ThresholdMsb, lsb: ThresholdLsb) -> Self {
         Self {
             current_detect_threshold: i24::from_be_bytes([
@@ -1264,7 +1259,6 @@ impl ChannelSpecific for ChannelConfig {
         }
     }
 
-    #[allow(clippy::cast_possible_truncation)]
     fn to_be_bytes(self) -> [u8; 2] {
         let phase = self.phase.to_be_bytes();
         [
@@ -1285,13 +1279,12 @@ pub struct ChannelOffsetCal {
 impl ChannelOffsetCal {
     /// Split this into the two [`ChannelSpecific`] halves that make up this `ChannelOffsetCal`
     #[must_use]
-    #[allow(clippy::cast_possible_truncation, clippy::missing_panics_doc)]
-    pub fn into_parts(self) -> (ChannelOffsetCalMsb, ChannelOffsetCalLsb) {
+    pub const fn into_parts(self) -> (ChannelOffsetCalMsb, ChannelOffsetCalLsb) {
         let offset = self.offset.to_be_bytes();
 
         (
             ChannelOffsetCalMsb {
-                bytes: offset[0..2].try_into().unwrap(),
+                bytes: [offset[0], offset[1]],
             },
             ChannelOffsetCalLsb {
                 bytes: [offset[2], 0],
@@ -1301,12 +1294,8 @@ impl ChannelOffsetCal {
 
     /// Build a `ChannelOffsetCal` from it's two [`ChannelSpecific`] halves
     #[must_use]
-    #[allow(
-        clippy::missing_panics_doc,
-        clippy::needless_pass_by_value,
-        clippy::similar_names
-    )]
-    pub fn from_parts(msb: ChannelOffsetCalMsb, lsb: ChannelOffsetCalLsb) -> Self {
+    #[allow(clippy::similar_names)]
+    pub const fn from_parts(msb: ChannelOffsetCalMsb, lsb: ChannelOffsetCalLsb) -> Self {
         Self {
             offset: i24::from_be_bytes([msb.bytes[0], msb.bytes[1], lsb.bytes[0]]),
         }
@@ -1376,13 +1365,12 @@ pub struct ChannelGainCal {
 impl ChannelGainCal {
     /// Split this into the two [`ChannelSpecific`] halves that make up this `ChannelGainCal`
     #[must_use]
-    #[allow(clippy::cast_possible_truncation, clippy::missing_panics_doc)]
-    pub fn into_parts(self) -> (ChannelGainCalMsb, ChannelGainCalLsb) {
+    pub const fn into_parts(self) -> (ChannelGainCalMsb, ChannelGainCalLsb) {
         let gain = self.gain.to_be_bytes();
 
         (
             ChannelGainCalMsb {
-                bytes: gain[0..2].try_into().unwrap(),
+                bytes: [gain[0], gain[1]],
             },
             ChannelGainCalLsb {
                 bytes: [gain[2], 0],
@@ -1392,12 +1380,8 @@ impl ChannelGainCal {
 
     /// Build a `ChannelGainCal` from it's two [`ChannelSpecific`] halves
     #[must_use]
-    #[allow(
-        clippy::missing_panics_doc,
-        clippy::needless_pass_by_value,
-        clippy::similar_names
-    )]
-    pub fn from_parts(msb: ChannelGainCalMsb, lsb: ChannelGainCalLsb) -> Self {
+    #[allow(clippy::similar_names)]
+    pub const fn from_parts(msb: ChannelGainCalMsb, lsb: ChannelGainCalLsb) -> Self {
         Self {
             gain: u24::from_be_bytes([msb.bytes[0], msb.bytes[1], lsb.bytes[0]]),
         }

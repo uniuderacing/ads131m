@@ -74,7 +74,6 @@ impl i10 {
 
     /// Return the representation of this `i10` as a byte array, leaving the bits above 10 bits as 0
     #[must_use]
-    #[allow(clippy::missing_panics_doc)]
     pub const fn to_be_bytes(self) -> [u8; 2] {
         let mut bytes: [u8; 2] = self.0.to_be_bytes();
         bytes[0] &= 0x03;
@@ -154,18 +153,15 @@ impl u24 {
 
     /// Construct a new `u24` from its representation as a byte array
     #[must_use]
-    pub fn from_be_bytes(bytes: [u8; 3]) -> Self {
-        let mut val_bytes = [0; 4];
-        val_bytes[1..].copy_from_slice(&bytes);
-
-        Self(u32::from_be_bytes(val_bytes))
+    pub const fn from_be_bytes(bytes: [u8; 3]) -> Self {
+        Self(u32::from_be_bytes([0, bytes[0], bytes[1], bytes[2]]))
     }
 
     /// Return the representation of this `u24` as a byte array
     #[must_use]
-    #[allow(clippy::missing_panics_doc)]
-    pub fn to_be_bytes(self) -> [u8; 3] {
-        self.0.to_be_bytes()[1..].try_into().unwrap()
+    pub const fn to_be_bytes(self) -> [u8; 3] {
+        let bytes = self.0.to_be_bytes();
+        [bytes[1], bytes[2], bytes[3]]
     }
 }
 
@@ -248,11 +244,8 @@ impl i24 {
     /// Construct a new `i24` from its representation as a byte array
     #[must_use]
     #[allow(clippy::cast_possible_wrap)]
-    pub fn from_be_bytes(bytes: [u8; 3]) -> Self {
-        let mut value_bytes = [0; 4];
-        value_bytes[1..].copy_from_slice(&bytes);
-
-        let unsigned = u32::from_be_bytes(value_bytes);
+    pub const fn from_be_bytes(bytes: [u8; 3]) -> Self {
+        let unsigned = u32::from_be_bytes([0, bytes[0], bytes[1], bytes[2]]);
         let value = ((unsigned << (32 - 24)) as i32) >> (32 - 24);
 
         Self(value)
@@ -260,9 +253,9 @@ impl i24 {
 
     /// Return the representation of this `i24` as a byte array
     #[must_use]
-    #[allow(clippy::missing_panics_doc)]
-    pub fn to_be_bytes(self) -> [u8; 3] {
-        self.0.to_be_bytes()[1..].try_into().unwrap()
+    pub const fn to_be_bytes(self) -> [u8; 3] {
+        let bytes = self.0.to_be_bytes();
+        [bytes[1], bytes[2], bytes[3]]
     }
 }
 
