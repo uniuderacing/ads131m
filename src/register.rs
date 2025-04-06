@@ -615,6 +615,7 @@ pub enum DcBlock {
 #[cfg_attr(test, derive(Sequence))]
 #[repr(u8)]
 pub enum ChannelMux {
+    #[allow(clippy::doc_markdown)]
     /// AINxP and AINxN
     ///
     /// This is the default channel mux setting

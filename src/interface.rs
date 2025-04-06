@@ -1,12 +1,10 @@
 //! Low level message interface for communicating with the device
 
-use core::marker::PhantomData;
-
 use crate::register::{
     Address, Channel, ChannelSpecific, CrcType, Global, Mode, Status, WordLength,
 };
-use crate::spi::Transfer;
 use crate::Error;
+use embedded_hal::spi::SpiBus;
 
 use crc::{Crc, CRC_16_CMS, CRC_16_IBM_3740};
 
@@ -116,7 +114,7 @@ impl ModeCache {
         }
     }
 
-    fn update_word_length(&mut self, word_length: WordLength) {
+    const fn update_word_length(&mut self, word_length: WordLength) {
         self.word_len = word_length.byte_count();
         self.word_packing = word_length;
     }
@@ -381,19 +379,17 @@ pub struct Response<const CHANNELS: usize> {
 /// TODO: Description
 ///
 /// TODO: Examples
-pub struct Ads131m<S: Transfer<W>, W: Copy, const CHANNELS: usize> {
+pub struct Ads131m<S: SpiBus, const CHANNELS: usize> {
     intf: S,
-    _word: PhantomData<W>,
     read_buf: [u8; MAX_READ_LEN],
     write_buf: [u8; MAX_WRITE_LEN],
     expected_response: ResponseKind,
     mode_cache: ModeCache,
 }
 
-impl<S, W, const CHANNELS: usize> Ads131m<S, W, CHANNELS>
+impl<S, const CHANNELS: usize> Ads131m<S, CHANNELS>
 where
-    S: Transfer<W>,
-    W: Copy,
+    S: SpiBus,
 {
     /// Communicate with the device
     ///
@@ -433,10 +429,12 @@ where
             read_len
         };
 
-        self.intf.transfer(
-            &self.write_buf[..write_len],
-            &mut self.read_buf[..real_read_len],
-        )?;
+        self.intf
+            .transfer(
+                &mut self.read_buf[..real_read_len],
+                &self.write_buf[..write_len],
+            )
+            .map_err(|_| Error::SpiIOError)?;
 
         let resp = self.decode_response(
             read_len,
@@ -459,7 +457,6 @@ where
     const fn new(intf: S, mode: Mode) -> Self {
         Self {
             intf,
-            _word: PhantomData,
             read_buf: [0; MAX_READ_LEN],
             write_buf: [0; MAX_WRITE_LEN],
             expected_response: ResponseKind::Reset,
@@ -593,18 +590,14 @@ where
                 WordLength::Bits32Signed => {
                     sample.copy_from_slice(&buf[word_idx + 1..word_idx + 4]);
                 }
-            };
+            }
         }
 
         SampleGrab { data }
     }
 }
 
-impl<S, W> Ads131m<S, W, 2>
-where
-    S: Transfer<W>,
-    W: Copy,
-{
+impl<S: SpiBus> Ads131m<S, 2> {
     /// Initialize an `ADS131M02` ADC driver
     ///
     /// The SPI interface must be configured for SPI mode 1 and the device must
@@ -626,11 +619,7 @@ where
     }
 }
 
-impl<S, W> Ads131m<S, W, 3>
-where
-    S: Transfer<W>,
-    W: Copy,
-{
+impl<S: SpiBus> Ads131m<S, 3> {
     /// Initialize an `ADS131M03` ADC driver
     ///
     /// The SPI interface must be configured for SPI mode 1 and the device must
@@ -652,11 +641,7 @@ where
     }
 }
 
-impl<S, W> Ads131m<S, W, 4>
-where
-    S: Transfer<W>,
-    W: Copy,
-{
+impl<S: SpiBus> Ads131m<S, 4> {
     /// Initialize an `ADS131M04` ADC driver
     ///
     /// The SPI interface must be configured for SPI mode 1 and the device must
@@ -678,11 +663,7 @@ where
     }
 }
 
-impl<S, W> Ads131m<S, W, 6>
-where
-    S: Transfer<W>,
-    W: Copy,
-{
+impl<S: SpiBus> Ads131m<S, 6> {
     /// Initialize an `ADS131M06` ADC driver
     ///
     /// The SPI interface must be configured for SPI mode 1 and the device must
@@ -704,11 +685,7 @@ where
     }
 }
 
-impl<S, W> Ads131m<S, W, 8>
-where
-    S: Transfer<W>,
-    W: Copy,
-{
+impl<S: SpiBus> Ads131m<S, 8> {
     /// Initialize an `ADS131M08` ADC driver
     ///
     /// The SPI interface must be configured for SPI mode 1 and the device must

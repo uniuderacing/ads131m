@@ -46,7 +46,6 @@ mod sample_grab;
 pub mod int;
 pub mod interface;
 pub mod register;
-pub mod spi;
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
